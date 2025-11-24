@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Donor vs Recipient Balance</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #f9fafb;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.4rem;
+    }
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 1100px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .controls label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .slider-wrapper {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #chart {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      padding: 1rem;
+      overflow: visible;
+    }
+    svg {
+      width: 100%;
+      height: 600px;
+    }
+    .axis path,
+    .axis line {
+      stroke: #d1d5db;
+    }
+    .axis text {
+      fill: #4b5563;
+      font-size: 0.75rem;
+    }
+    .axis-label {
+      fill: #111827;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .dot {
+      opacity: 0.8;
+      stroke-width: 1px;
+      cursor: pointer;
+    }
+    .dot.net-donor {
+      fill: #2563eb;
+      stroke: #1d4ed8;
+    }
+    .dot.net-recipient {
+      fill: #f97316;
+      stroke: #ea580c;
+    }
+    .dot:hover {
+      opacity: 1;
+      stroke-width: 2px;
+    }
+    .ref-line {
+      stroke: #6b7280;
+      stroke-dasharray: 4 4;
+      stroke-width: 1.2px;
+    }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: #ffffff;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+      border: 1px solid #e5e7eb;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      max-width: 260px;
+      z-index: 10;
+      line-height: 1.4;
+    }
+    .tooltip strong {
+      font-size: 0.9rem;
+    }
+    .legend {
+      font-size: 0.75rem;
+      fill: #4b5563;
+    }
+    .label {
+      font-size: 0.65rem;
+      fill: #111827;
+      paint-order: stroke;
+      stroke-width: 3px;
+      stroke: #ffffff;
+    }
+
+    /* Drill-down layout */
+    #drilldown {
+      margin-top: 1.5rem;
+    }
+    #drilldown-title {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      color: #111827;
+    }
+    .drilldown-content {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .panel {
+      flex: 1 1 320px;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      padding: 0.75rem 1rem 1rem;
+    }
+    .panel h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.95rem;
+    }
+    .panel svg {
+      width: 100%;
+      height: 260px;
+    }
+    .no-data-text {
+      font-size: 0.8rem;
+      fill: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="chart-container">
+    <h1>Donor vs. Recipient Balance (Country-Level Scatterplot)</h1>
+
+    <div class="controls">
+      <div class="slider-wrapper">
+        <span>Year:</span>
+        <input id="yearSlider" type="range" min="2000" max="2025" step="1" value="2000" />
+        <span id="yearValue">2000</span>
+      </div>
+
+      <label>
+        <input type="checkbox" id="logScale" />
+        Use log scale (x &amp; y)
+      </label>
+
+      <div class="slider-wrapper">
+        <span>Max Received:</span>
+        <input id="maxReceived" type="range" min="0" max="1" step="1" value="1" />
+        <span id="maxReceivedValue">auto</span>
+      </div>
+
+      <div class="slider-wrapper">
+        <span>Max Donated:</span>
+        <input id="maxDonated" type="range" min="0" max="1" step="1" value="1" />
+        <span id="maxDonatedValue">auto</span>
+      </div>
+
+      <span style="font-size:0.8rem; color:#6b7280;">
+        Above line y = x → Net donors · Below → Net recipients
+      </span>
+    </div>
+
+    <div id="chart">
+      <svg></svg>
+    </div>
+
+    <!-- Drill-down panel -->
+    <div id="drilldown">
+      <h2 id="drilldown-title">
+        Country relationships (click a country on the scatterplot)
+      </h2>
+      <div class="drilldown-content">
+        <div class="panel">
+          <h3 id="top-donors-title">Top donors (select a country)</h3>
+          <svg id="top-donors-svg"></svg>
+        </div>
+        <div class="panel">
+          <h3 id="top-recipients-title">Top recipients (select a country)</h3>
+          <svg id="top-recipients-svg"></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const svg = d3.select("svg");
+    const width = 900;
+    const height = 550;
+    const margin = { top: 40, right: 40, bottom: 60, left: 80 };
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+    const g = svg.append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const xAxisGroup = g.append("g")
+      .attr("class", "axis x-axis")
+      .attr("transform", `translate(0, ${innerHeight})`);
+
+    const yAxisGroup = g.append("g")
+      .attr("class", "axis y-axis");
+
+    g.append("text")
+      .attr("class", "axis-label")
+      .attr("x", innerWidth / 2)
+      .attr("y", innerHeight + 45)
+      .attr("text-anchor", "middle")
+      .text("Total Received (USD, constant)");
+
+    g.append("text")
+      .attr("class", "axis-label")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -innerHeight / 2)
+      .attr("y", -60)
+      .attr("text-anchor", "middle")
+      .text("Total Donated (USD, constant)");
+
+    const refLine = g.append("line").attr("class", "ref-line");
+    const pointsGroup = g.append("g").attr("class", "points");
+    const labelsGroup = g.append("g").attr("class", "labels");
+    const legendGroup = g.append("g")
+      .attr("class", "legend")
+      .attr("transform", `translate(${innerWidth - 210}, 0)`);
+
+    const tooltip = d3.select("#tooltip");
+
+    let xScale = d3.scaleLinear().range([0, innerWidth]);
+    let yScale = d3.scaleLinear().range([innerHeight, 0]);
+
+    // log scale ON by default
+    let logMode = true;
+    let currentYear;
+    let years = [];
+    const yearCountryMap = new Map(); // year -> [{country, year, total_received, total_donated, total_flow}, ...]
+
+    const yearSlider = document.getElementById("yearSlider");
+    const yearValue = document.getElementById("yearValue");
+    const logCheckbox = document.getElementById("logScale");
+    const maxReceivedSlider = document.getElementById("maxReceived");
+    const maxReceivedValue = document.getElementById("maxReceivedValue");
+    const maxDonatedSlider = document.getElementById("maxDonated");
+    const maxDonatedValue = document.getElementById("maxDonatedValue");
+
+    logCheckbox.checked = true; // reflect default log mode in UI
+
+    let globalMaxReceived = 0;
+    let globalMaxDonated = 0;
+    const fmtShort = d3.format(".2s");
+
+    // ---- Drill-down globals ----
+    let rawData = [];
+    let selectedCountry = null; // last clicked country on scatterplot
+
+    const drilldownTitle = document.getElementById("drilldown-title");
+    const topDonorsTitle = document.getElementById("top-donors-title");
+    const topRecipientsTitle = document.getElementById("top-recipients-title");
+
+    const donorsSvg = d3.select("#top-donors-svg");
+    const recipientsSvg = d3.select("#top-recipients-svg");
+
+    const drillWidth = 430;
+    const drillHeight = 260;
+    const drillMargin = { top: 30, right: 20, bottom: 30, left: 120 };
+    const drillInnerWidth = drillWidth - drillMargin.left - drillMargin.right;
+    const drillInnerHeight = drillHeight - drillMargin.top - drillMargin.bottom;
+
+    donorsSvg.attr("viewBox", `0 0 ${drillWidth} ${drillHeight}`);
+    recipientsSvg.attr("viewBox", `0 0 ${drillWidth} ${drillHeight}`);
+
+    const donorsG = donorsSvg.append("g")
+      .attr("transform", `translate(${drillMargin.left},${drillMargin.top})`);
+    const recipientsG = recipientsSvg.append("g")
+      .attr("transform", `translate(${drillMargin.left},${drillMargin.top})`);
+
+    const donorsXAxisG = donorsG.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${drillInnerHeight})`);
+    const donorsYAxisG = donorsG.append("g").attr("class", "axis");
+
+    const recipientsXAxisG = recipientsG.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${drillInnerHeight})`);
+    const recipientsYAxisG = recipientsG.append("g").attr("class", "axis");
+
+    // --- LOAD DATA ---
+    d3.csv("aiddata-countries-only.csv", d3.autoType).then(raw => {
+      rawData = raw;
+
+      // Aggregate per (year, country) for scatterplot
+      years = Array.from(new Set(raw.map(d => d.year))).sort(d3.ascending);
+
+      years.forEach(year => {
+        const subset = raw.filter(d => d.year === year);
+
+        const donatedByCountry = d3.rollup(
+          subset,
+          v => d3.sum(v, d => d.commitment_amount_usd_constant),
+          d => d.donor
+        );
+
+        const receivedByCountry = d3.rollup(
+          subset,
+          v => d3.sum(v, d => d.commitment_amount_usd_constant),
+          d => d.recipient
+        );
+
+        const countries = new Set([
+          ...donatedByCountry.keys(),
+          ...receivedByCountry.keys()
+        ]);
+
+        const arr = [];
+        for (const c of countries) {
+          const donated = donatedByCountry.get(c) || 0;
+          const received = receivedByCountry.get(c) || 0;
+          arr.push({
+            country: c,
+            year: year,
+            total_donated: donated,
+            total_received: received,
+            total_flow: donated + received
+          });
+        }
+        yearCountryMap.set(year, arr);
+      });
+
+      // --- compute global maxima for zoom sliders ---
+      let allRows = [];
+      yearCountryMap.forEach(arr => {
+        allRows = allRows.concat(arr);
+      });
+
+      globalMaxReceived = d3.max(allRows, d => d.total_received);
+      globalMaxDonated  = d3.max(allRows, d => d.total_donated);
+
+      maxReceivedSlider.min = 0;
+      maxReceivedSlider.max = globalMaxReceived;
+      maxReceivedSlider.value = globalMaxReceived;
+      maxReceivedValue.textContent = fmtShort(globalMaxReceived);
+
+      maxDonatedSlider.min = 0;
+      maxDonatedSlider.max = globalMaxDonated;
+      maxDonatedSlider.value = globalMaxDonated;
+      maxDonatedValue.textContent = fmtShort(globalMaxDonated);
+
+      // Slider bounds from data
+      yearSlider.min = d3.min(years);
+      yearSlider.max = d3.max(years);
+      currentYear = years[0];
+      yearSlider.value = currentYear;
+      yearValue.textContent = currentYear;
+
+      drawLegend();
+      update(); // first render
+
+      // Interactions
+      yearSlider.addEventListener("input", () => {
+        currentYear = +yearSlider.value;
+        yearValue.textContent = currentYear;
+        update();
+        // keep drilldown in sync with current year for selected country
+        if (selectedCountry) {
+          updateDrilldown(selectedCountry);
+        }
+      });
+
+      logCheckbox.addEventListener("change", () => {
+        logMode = logCheckbox.checked;
+        update();
+        if (selectedCountry) {
+          updateDrilldown(selectedCountry);
+        }
+      });
+
+      maxReceivedSlider.addEventListener("input", () => {
+        maxReceivedValue.textContent = fmtShort(+maxReceivedSlider.value);
+        update();
+        if (selectedCountry) {
+          updateDrilldown(selectedCountry);
+        }
+      });
+
+      maxDonatedSlider.addEventListener("input", () => {
+        maxDonatedValue.textContent = fmtShort(+maxDonatedSlider.value);
+        update();
+        if (selectedCountry) {
+          updateDrilldown(selectedCountry);
+        }
+      });
+    }).catch(err => {
+      console.error("Error loading CSV:", err);
+    });
+
+    function update() {
+      let data = yearCountryMap.get(currentYear) || [];
+
+      // zoom filters
+      const maxRec = +maxReceivedSlider.value || Infinity;
+      const maxDon = +maxDonatedSlider.value || Infinity;
+
+      data = data.filter(d =>
+        d.total_received <= maxRec &&
+        d.total_donated <= maxDon
+      );
+
+      // radius scale by total_flow
+      const flowExtent = d3.extent(data, d => d.total_flow);
+      const rScale = d3.scaleSqrt()
+        .domain(flowExtent)
+        .range([3, 12]);
+
+      const values = data.flatMap(d => [d.total_received, d.total_donated]);
+      const maxVal = d3.max(values) || 1;
+
+      if (logMode) {
+        // Use the same transformation we use when plotting (safeVal)
+        const transformed = data.flatMap(d => [
+          Math.max(1, d.total_received),
+          Math.max(1, d.total_donated)
+        ]);
+
+        const minLog = d3.min(transformed) || 1;
+        const maxLog = d3.max(transformed) || 10;
+
+        xScale = d3.scaleLog()
+          .domain([minLog, maxLog])
+          .range([0, innerWidth])
+          .nice();
+
+        yScale = d3.scaleLog()
+          .domain([minLog, maxLog])
+          .range([innerHeight, 0])
+          .nice();
+      } else {
+        const padding = maxVal * 0.05;
+        xScale = d3.scaleLinear()
+          .domain([0, maxVal + padding])
+          .range([0, innerWidth])
+          .nice();
+
+        yScale = d3.scaleLinear()
+          .domain([0, maxVal + padding])
+          .range([innerHeight, 0])
+          .nice();
+      }
+
+      const axisFormat = d3.format(".2s");
+      const xAxis = d3.axisBottom(xScale).ticks(6).tickFormat(axisFormat);
+      const yAxis = d3.axisLeft(yScale).ticks(6).tickFormat(axisFormat);
+
+      xAxisGroup.transition().duration(600).call(xAxis);
+      yAxisGroup.transition().duration(600).call(yAxis);
+
+      drawRefLine();
+
+      const circles = pointsGroup.selectAll("circle")
+        .data(data, d => d.country);
+
+      circles.exit()
+        .transition().duration(300)
+        .attr("r", 0)
+        .remove();
+
+      const circlesEnter = circles.enter().append("circle")
+        .attr("r", 0);
+
+      const circlesMerged = circlesEnter.merge(circles)
+        .attr("class", d =>
+          "dot " + (d.total_donated >= d.total_received ? "net-donor" : "net-recipient")
+        )
+        .on("mouseenter", (event, d) => showTooltip(event, d))
+        .on("mousemove", (event, d) => moveTooltip(event))
+        .on("mouseleave", hideTooltip)
+        .on("click", (event, d) => {
+          selectedCountry = d.country;
+          updateDrilldown(d.country);
+        });
+
+      circlesMerged.transition()
+        .duration(600)
+        .attr("cx", d => xScale(safeVal(d.total_received)))
+        .attr("cy", d => yScale(safeVal(d.total_donated)))
+        .attr("r", d => rScale(d.total_flow));
+
+      // --- LABEL OUTLIERS (top 10 by |donated - received|) ---
+      const withImbalance = data
+        .map(d => ({
+          ...d,
+          imbalance: Math.abs(d.total_donated - d.total_received)
+        }))
+        .sort((a, b) => d3.descending(a.imbalance, b.imbalance))
+        .slice(0, 10);
+
+      const labels = labelsGroup.selectAll("text")
+        .data(withImbalance, d => d.country);
+
+      labels.exit().remove();
+
+      const labelsEnter = labels.enter().append("text")
+        .attr("class", "label")
+        .attr("text-anchor", "start");
+
+      labelsEnter.merge(labels)
+        .attr("x", d => xScale(safeVal(d.total_received)) + 7)
+        .attr("y", d => yScale(safeVal(d.total_donated)) - 7)
+        .text(d => d.country);
+    }
+
+    function drawRefLine() {
+      const domainMin = Math.min(xScale.domain()[0], yScale.domain()[0]);
+      const domainMax = Math.max(xScale.domain()[1], yScale.domain()[1]);
+
+      refLine
+        .attr("x1", xScale(domainMin))
+        .attr("y1", yScale(domainMin))
+        .attr("x2", xScale(domainMax))
+        .attr("y2", yScale(domainMax));
+    }
+
+    function drawLegend() {
+      const items = [
+        { label: "Net Donor (Donated > Received)", class: "net-donor" },
+        { label: "Net Recipient (Received > Donated)", class: "net-recipient" }
+      ];
+
+      const legItem = legendGroup.selectAll("g.legend-item")
+        .data(items)
+        .enter()
+        .append("g")
+        .attr("class", "legend-item")
+        .attr("transform", (_, i) => `translate(0, ${i * 20})`);
+
+      legItem.append("circle")
+        .attr("r", 5)
+        .attr("cx", 0)
+        .attr("cy", 0)
+        .attr("class", d => "dot " + d.class);
+
+      legItem.append("text")
+        .attr("x", 10)
+        .attr("y", 4)
+        .text(d => d.label);
+    }
+
+    function safeVal(v) {
+      return logMode ? Math.max(1, v) : v;
+    }
+
+    function showTooltip(event, d) {
+      const net = d.total_donated - d.total_received;
+      const netLabel = net >= 0 ? "Net Donor" : "Net Recipient";
+      const fmt = d3.format(",.2f");
+
+      tooltip
+        .style("opacity", 1)
+        .html(`
+          <strong>${d.country}</strong><br/>
+          Year: ${d.year}<br/>
+          Received: ${fmt(d.total_received)}<br/>
+          Donated: ${fmt(d.total_donated)}<br/>
+          Total flow: ${fmt(d.total_flow)}<br/>
+          Net balance: ${fmt(net)} (${netLabel})
+        `);
+
+      moveTooltip(event);
+    }
+
+    function moveTooltip(event) {
+      const [x, y] = d3.pointer(event, document.body);
+      tooltip
+        .style("left", (x + 15) + "px")
+        .style("top", (y + 15) + "px");
+    }
+
+    function hideTooltip() {
+      tooltip.style("opacity", 0);
+    }
+
+    // -------- Drill-down helpers (per-year) --------
+
+    function updateDrilldown(country) {
+      if (!country) return;
+
+      const year = currentYear;
+
+      drilldownTitle.textContent =
+        `Country relationships for ${country} in ${year} (click another country to change)`;
+      topDonorsTitle.textContent = `Top donors to ${country} in ${year}`;
+      topRecipientsTitle.textContent = `Top recipients from ${country} in ${year}`;
+
+      const subset = rawData.filter(d => d.year === year);
+
+      // Donors TO the selected country in this year
+      const donorsMap = d3.rollup(
+        subset.filter(d => d.recipient === country),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.donor
+      );
+      const donorsArr = Array.from(donorsMap, ([partner, value]) => ({ partner, value }))
+        .sort((a, b) => d3.descending(a.value, b.value))
+        .slice(0, 5);
+
+      // Recipients FROM the selected country in this year
+      const recipientsMap = d3.rollup(
+        subset.filter(d => d.donor === country),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.recipient
+      );
+      const recipientsArr = Array.from(recipientsMap, ([partner, value]) => ({ partner, value }))
+        .sort((a, b) => d3.descending(a.value, b.value))
+        .slice(0, 5);
+
+      drawDrilldownChart(donorsG, donorsXAxisG, donorsYAxisG, donorsArr,
+        { mode: "to", country, year });
+      drawDrilldownChart(recipientsG, recipientsXAxisG, recipientsYAxisG, recipientsArr,
+        { mode: "from", country, year });
+    }
+
+    function showBarTooltip(event, d, config) {
+      const fmt = d3.format(",.2f");
+      const title = config.mode === "to"
+        ? `${d.partner} → ${config.country}`
+        : `${config.country} → ${d.partner}`;
+      tooltip
+        .style("opacity", 1)
+        .html(`
+          <strong>${title}</strong><br/>
+          Year: ${config.year}<br/>
+          Total: ${fmt(d.value)} USD (constant)
+        `);
+      moveTooltip(event);
+    }
+
+    function drawDrilldownChart(group, xAxisG, yAxisG, data, config) {
+      group.selectAll(".no-data-text").remove();
+
+      if (!data.length) {
+        group.selectAll("rect").remove();
+        xAxisG.selectAll("*").remove();
+        yAxisG.selectAll("*").remove();
+
+        group.append("text")
+          .attr("class", "no-data-text")
+          .attr("x", drillInnerWidth / 2)
+          .attr("y", drillInnerHeight / 2)
+          .attr("text-anchor", "middle")
+          .text(`No data for ${config.country} in ${config.year}`);
+        return;
+      }
+
+      const x = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.value)])
+        .range([0, drillInnerWidth])
+        .nice();
+
+      const y = d3.scaleBand()
+        .domain(data.map(d => d.partner))
+        .range([0, drillInnerHeight])
+        .padding(0.2);
+
+      const xAxis = d3.axisBottom(x).ticks(4).tickFormat(fmtShort);
+      const yAxis = d3.axisLeft(y);
+
+      xAxisG.transition().duration(500).call(xAxis);
+      yAxisG.transition().duration(500).call(yAxis);
+
+      const bars = group.selectAll("rect").data(data, d => d.partner);
+
+      bars.exit().remove();
+
+      const barsEnter = bars.enter().append("rect")
+        .attr("x", 0)
+        .attr("height", y.bandwidth())
+        .attr("y", d => y(d.partner))
+        .attr("fill", "#3b82f6");
+
+      const MIN_BAR_WIDTH = 5;  // ensure tiny flows are still visible/hoverable
+
+      barsEnter.merge(bars)
+        .on("mouseenter", (event, d) => showBarTooltip(event, d, config))
+        .on("mousemove", (event) => moveTooltip(event))
+        .on("mouseleave", hideTooltip)
+        .transition()
+        .duration(500)
+        .attr("y", d => y(d.partner))
+        .attr("width", d => {
+          const w = x(d.value);
+          if (!isFinite(w) || d.value <= 0) return 0;
+          return Math.max(w, MIN_BAR_WIDTH);
+        })
+        .attr("height", y.bandwidth());
+    }
+  </script>
+</body>
+</html>
