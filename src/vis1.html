@@ -164,17 +164,11 @@
         Use log scale (x &amp; y)
       </label>
 
-      <div class="slider-wrapper">
-        <span>Max Received:</span>
-        <input id="maxReceived" type="range" min="0" max="1" step="1" value="1" />
-        <span id="maxReceivedValue">auto</span>
-      </div>
-
-      <div class="slider-wrapper">
-        <span>Max Donated:</span>
-        <input id="maxDonated" type="range" min="0" max="1" step="1" value="1" />
-        <span id="maxDonatedValue">auto</span>
-      </div>
+      <!-- overall view toggle -->
+      <label>
+        <input type="checkbox" id="overallMode" />
+        Overall view (all years)
+      </label>
 
       <span style="font-size:0.8rem; color:#6b7280;">
         Above line y = x → Net donors · Below → Net recipients
@@ -257,21 +251,25 @@
     let logMode = true;
     let currentYear;
     let years = [];
-    const yearCountryMap = new Map(); // year -> [{country, year, total_received, total_donated, total_flow}, ...]
+    const yearCountryMap = new Map(); // year -> [{country, year, period, total_received, total_donated, total_flow}, ...]
+
+    // overall aggregated data
+    let overallData = [];
+    let overallPeriodLabel = "";
 
     const yearSlider = document.getElementById("yearSlider");
     const yearValue = document.getElementById("yearValue");
     const logCheckbox = document.getElementById("logScale");
-    const maxReceivedSlider = document.getElementById("maxReceived");
-    const maxReceivedValue = document.getElementById("maxReceivedValue");
-    const maxDonatedSlider = document.getElementById("maxDonated");
-    const maxDonatedValue = document.getElementById("maxDonatedValue");
+    const overallCheckbox = document.getElementById("overallMode");
 
     logCheckbox.checked = true; // reflect default log mode in UI
 
-    let globalMaxReceived = 0;
-    let globalMaxDonated = 0;
-    const fmtShort = d3.format(".2s");
+    const fmtShort = d => {
+      const v = d3.format(".2s")(d); // e.g. "1.5G"
+      return v.replace("G", "B");    // "1.5B"
+    };
+
+    let overallMode = false;
 
     // ---- Drill-down globals ----
     let rawData = [];
@@ -309,12 +307,14 @@
     const recipientsYAxisG = recipientsG.append("g").attr("class", "axis");
 
     // --- LOAD DATA ---
-    d3.csv("aiddata-countries-only.csv", d3.autoType).then(raw => {
+    d3.csv("/../data/aiddata-countries-only.csv", d3.autoType).then(raw => {
       rawData = raw;
 
-      // Aggregate per (year, country) for scatterplot
+      // years available
       years = Array.from(new Set(raw.map(d => d.year))).sort(d3.ascending);
+      overallPeriodLabel = `${years[0]}–${years[years.length - 1]}`;
 
+      // Aggregate per (year, country) for scatterplot
       years.forEach(year => {
         const subset = raw.filter(d => d.year === year);
 
@@ -342,6 +342,7 @@
           arr.push({
             country: c,
             year: year,
+            period: String(year),
             total_donated: donated,
             total_received: received,
             total_flow: donated + received
@@ -350,24 +351,36 @@
         yearCountryMap.set(year, arr);
       });
 
-      // --- compute global maxima for zoom sliders ---
-      let allRows = [];
-      yearCountryMap.forEach(arr => {
-        allRows = allRows.concat(arr);
+      // overall per-country sums (all years)
+      const donatedOverall = d3.rollup(
+        raw,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.donor
+      );
+      const receivedOverall = d3.rollup(
+        raw,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.recipient
+      );
+
+      const allCountriesOverall = new Set([
+        ...donatedOverall.keys(),
+        ...receivedOverall.keys()
+      ]);
+
+      overallData = [];
+      allCountriesOverall.forEach(c => {
+        const donated = donatedOverall.get(c) || 0;
+        const received = receivedOverall.get(c) || 0;
+        overallData.push({
+          country: c,
+          year: null,
+          period: overallPeriodLabel,
+          total_donated: donated,
+          total_received: received,
+          total_flow: donated + received
+        });
       });
-
-      globalMaxReceived = d3.max(allRows, d => d.total_received);
-      globalMaxDonated  = d3.max(allRows, d => d.total_donated);
-
-      maxReceivedSlider.min = 0;
-      maxReceivedSlider.max = globalMaxReceived;
-      maxReceivedSlider.value = globalMaxReceived;
-      maxReceivedValue.textContent = fmtShort(globalMaxReceived);
-
-      maxDonatedSlider.min = 0;
-      maxDonatedSlider.max = globalMaxDonated;
-      maxDonatedSlider.value = globalMaxDonated;
-      maxDonatedValue.textContent = fmtShort(globalMaxDonated);
 
       // Slider bounds from data
       yearSlider.min = d3.min(years);
@@ -382,9 +395,10 @@
       // Interactions
       yearSlider.addEventListener("input", () => {
         currentYear = +yearSlider.value;
-        yearValue.textContent = currentYear;
+        if (!overallMode) {
+          yearValue.textContent = currentYear;
+        }
         update();
-        // keep drilldown in sync with current year for selected country
         if (selectedCountry) {
           updateDrilldown(selectedCountry);
         }
@@ -398,36 +412,29 @@
         }
       });
 
-      maxReceivedSlider.addEventListener("input", () => {
-        maxReceivedValue.textContent = fmtShort(+maxReceivedSlider.value);
+      // overall mode toggle
+      overallCheckbox.addEventListener("change", () => {
+        overallMode = overallCheckbox.checked;
+        yearSlider.disabled = overallMode;
+        yearValue.textContent = overallMode ? overallPeriodLabel : currentYear;
         update();
         if (selectedCountry) {
-          updateDrilldown(selectedCountry);
-        }
-      });
-
-      maxDonatedSlider.addEventListener("input", () => {
-        maxDonatedValue.textContent = fmtShort(+maxDonatedSlider.value);
-        update();
-        if (selectedCountry) {
-          updateDrilldown(selectedCountry);
+          updateDrilldown(selectedCountry); // recompute drilldown for overall vs year
         }
       });
     }).catch(err => {
       console.error("Error loading CSV:", err);
     });
 
+    function getCurrentData() {
+      if (overallMode) {
+        return overallData.slice(); // copy
+      }
+      return yearCountryMap.get(currentYear) || [];
+    }
+
     function update() {
-      let data = yearCountryMap.get(currentYear) || [];
-
-      // zoom filters
-      const maxRec = +maxReceivedSlider.value || Infinity;
-      const maxDon = +maxDonatedSlider.value || Infinity;
-
-      data = data.filter(d =>
-        d.total_received <= maxRec &&
-        d.total_donated <= maxDon
-      );
+      let data = getCurrentData();
 
       // radius scale by total_flow
       const flowExtent = d3.extent(data, d => d.total_flow);
@@ -439,22 +446,21 @@
       const maxVal = d3.max(values) || 1;
 
       if (logMode) {
-        // Use the same transformation we use when plotting (safeVal)
         const transformed = data.flatMap(d => [
-          Math.max(1, d.total_received),
-          Math.max(1, d.total_donated)
+          Math.max(10000, d.total_received),
+          Math.max(10000, d.total_donated)
         ]);
 
-        const minLog = d3.min(transformed) || 1;
-        const maxLog = d3.max(transformed) || 10;
+        const MIN_AXIS = 10000;                  // 10k floor for both axes
+        const maxLog = d3.max(transformed) || MIN_AXIS * 10;
 
         xScale = d3.scaleLog()
-          .domain([minLog, maxLog])
+          .domain([MIN_AXIS, maxLog])
           .range([0, innerWidth])
           .nice();
 
         yScale = d3.scaleLog()
-          .domain([minLog, maxLog])
+          .domain([MIN_AXIS, maxLog])
           .range([innerHeight, 0])
           .nice();
       } else {
@@ -470,7 +476,10 @@
           .nice();
       }
 
-      const axisFormat = d3.format(".2s");
+      const axisFormat = d => {
+        const v = d3.format(".2s")(d); // e.g. "1.5G"
+        return v.replace("G", "B");    // "1.5B"
+      };
       const xAxis = d3.axisBottom(xScale).ticks(6).tickFormat(axisFormat);
       const yAxis = d3.axisLeft(yScale).ticks(6).tickFormat(axisFormat);
 
@@ -498,6 +507,7 @@
         .on("mousemove", (event, d) => moveTooltip(event))
         .on("mouseleave", hideTooltip)
         .on("click", (event, d) => {
+          // Always allow drilldown; it will choose year vs overall based on overallMode
           selectedCountry = d.country;
           updateDrilldown(d.country);
         });
@@ -569,7 +579,8 @@
     }
 
     function safeVal(v) {
-      return logMode ? Math.max(1, v) : v;
+      const MIN_AXIS = 10000;        // 10k floor in log mode
+      return logMode ? Math.max(MIN_AXIS, v) : v;
     }
 
     function showTooltip(event, d) {
@@ -581,7 +592,7 @@
         .style("opacity", 1)
         .html(`
           <strong>${d.country}</strong><br/>
-          Year: ${d.year}<br/>
+          Period: ${d.period}<br/>
           Received: ${fmt(d.total_received)}<br/>
           Donated: ${fmt(d.total_donated)}<br/>
           Total flow: ${fmt(d.total_flow)}<br/>
@@ -602,23 +613,26 @@
       tooltip.style("opacity", 0);
     }
 
-    // -------- Drill-down helpers (per-year) --------
+    // -------- Drill-down helpers (per-year OR overall) --------
 
     function updateDrilldown(country) {
       if (!country) return;
 
-      const year = currentYear;
+      const isOverall = overallMode;
+      const period = isOverall ? overallPeriodLabel : String(currentYear);
 
       drilldownTitle.textContent =
-        `Country relationships for ${country} in ${year} (click another country to change)`;
-      topDonorsTitle.textContent = `Top donors to ${country} in ${year}`;
-      topRecipientsTitle.textContent = `Top recipients from ${country} in ${year}`;
+        `Country relationships for ${country} in ${period} (click another country to change)`;
+      topDonorsTitle.textContent = `Top donors to ${country} in ${period}`;
+      topRecipientsTitle.textContent = `Top recipients from ${country} in ${period}`;
 
-      const subset = rawData.filter(d => d.year === year);
+      const baseSubset = isOverall
+        ? rawData
+        : rawData.filter(d => d.year === currentYear);
 
-      // Donors TO the selected country in this year
+      // Donors TO the selected country (overall or year)
       const donorsMap = d3.rollup(
-        subset.filter(d => d.recipient === country),
+        baseSubset.filter(d => d.recipient === country),
         v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
         d => d.donor
       );
@@ -626,9 +640,9 @@
         .sort((a, b) => d3.descending(a.value, b.value))
         .slice(0, 5);
 
-      // Recipients FROM the selected country in this year
+      // Recipients FROM the selected country (overall or year)
       const recipientsMap = d3.rollup(
-        subset.filter(d => d.donor === country),
+        baseSubset.filter(d => d.donor === country),
         v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
         d => d.recipient
       );
@@ -637,9 +651,9 @@
         .slice(0, 5);
 
       drawDrilldownChart(donorsG, donorsXAxisG, donorsYAxisG, donorsArr,
-        { mode: "to", country, year });
+        { mode: "to", country, period });
       drawDrilldownChart(recipientsG, recipientsXAxisG, recipientsYAxisG, recipientsArr,
-        { mode: "from", country, year });
+        { mode: "from", country, period });
     }
 
     function showBarTooltip(event, d, config) {
@@ -651,7 +665,7 @@
         .style("opacity", 1)
         .html(`
           <strong>${title}</strong><br/>
-          Year: ${config.year}<br/>
+          Period: ${config.period}<br/>
           Total: ${fmt(d.value)} USD (constant)
         `);
       moveTooltip(event);
@@ -670,7 +684,7 @@
           .attr("x", drillInnerWidth / 2)
           .attr("y", drillInnerHeight / 2)
           .attr("text-anchor", "middle")
-          .text(`No data for ${config.country} in ${config.year}`);
+          .text(`No data for ${config.country} in ${config.period}`);
         return;
       }
 
