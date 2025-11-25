@@ -229,8 +229,8 @@
     };
 
     Promise.all([
-      d3.csv("aiddata-countries-only.csv", d3.autoType),
-      d3.json("world-110m2.json")
+      d3.csv("/../data/aiddata-countries-only.csv", d3.autoType),
+      d3.json("/../data/world-110m2.json")
     ]).then(([csv, worldTopo]) => {
       rawData = csv;
 
