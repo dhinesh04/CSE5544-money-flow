@@ -1,122 +1,225 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <title>Dominant Aid Purpose by Country</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        .map-container {
-            display: inline-block;
-            margin: 10px;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        path {
-            stroke: #fff;
-            stroke-width: 0.5px;
+        h2 {
+            color: #333;
+            margin-top: 20px;
         }
 
-        h3 {
-            font-family: sans-serif;
-            text-align: center;
+        #vis-container {
+            position: relative;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-top: 10px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 12px;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 250px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            line-height: 1.4em;
+        }
+
+        /* Legend Styling */
+        .legend-container {
+            display: flex;
+            flex-wrap: wrap;
+            max-width: 1000px;
+            margin-top: 10px;
+            justify-content: center;
+            padding: 10px;
+            background: #fff;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            margin-right: 5px;
+            border-radius: 2px;
         }
     </style>
 </head>
 
 <body>
-    <div id="vis"></div>
-    <script>
 
+    <h2>Dominant Aid Purpose by Country</h2>
+    <p style="color: #666; font-size: 14px;">Countries are colored by the aid sector that received the most funding.</p>
+
+    <div id="vis-container">
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+
+    <div id="legend" class="legend-container"></div>
+
+    <script>
+        const width = 1000;
+        const height = 600;
+
+        // Name Mapping to fix gray countries
+        const nameMapping = {
+            "United States": "USA",
+            "United Kingdom": "England",
+            "Korea": "South Korea",
+            "Slovak Republic": "Slovakia",
+            "Czech Republic": "Czech Republic",
+            "Russian Federation": "Russia",
+            "Congo, Dem. Rep.": "Democratic Republic of the Congo",
+            "Tanzania": "United Republic of Tanzania",
+            "Egypt, Arab Rep.": "Egypt",
+            "Venezuela, RB": "Venezuela",
+            "Yemen, Rep.": "Yemen",
+            "Iran, Islamic Rep.": "Iran",
+            "Syrian Arab Republic": "Syria"
+        };
+
+        const svg = d3.select("#vis-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const projection = d3.geoMercator()
+            .scale(130)
+            .translate([width / 2, height / 1.5]);
+
+        const path = d3.geoPath().projection(projection);
 
         Promise.all([
-            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"), // Example GeoJSON
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
             d3.json("../data/processed_aid_data.json")
-        ]).then(([topo, data]) => {
+        ]).then(([topo, jsonData]) => {
 
-            const width = 960, height = 600;
-            const svg = d3.select("body").append("svg").attr("width", width).attr("height", height);
+            // --- 1. PROCESS DATA ---
+            const dataMap = new Map();
+            const uniquePurposes = new Set();
 
-            // Create a color scale for purposes
-            const allDominant = Array.from(new Set(data.map(d => d.dominant_purpose)));
-            const colorScale = d3.scaleOrdinal(d3.schemeSet3).domain(allDominant);
+            jsonData.forEach(d => {
+                let country = d.country;
+                if (nameMapping[country]) country = nameMapping[country];
 
-
-            // Create a map for fast lookup: countryName -> dataObject
-            const dataMap = new Map(data.map(d => [d.country, d]));
-
-            globalPurposes.forEach(purpose => {
-                // Create a container for each map
-                const div = d3.select("#vis").append("div").attr("class", "map-container");
-                div.append("h3").text(purpose);
-
-                const svg = div.append("svg")
-                    .attr("width", width)
-                    .attr("height", height);
-
-                const projection = d3.geoMercator()
-                    .scale(40)
-                    .translate([width / 2, height / 1.5]);
-
-                const path = d3.geoPath().projection(projection);
-
-                // Define Color Scale (Log scale handles large variances better)
-                const amounts = data.map(d => d.global_breakdown[purpose]).filter(v => v > 0);
-                const colorScale = d3.scaleSequential(d3.interpolateBlues)
-                    .domain([0, d3.max(amounts)]); // Or use d3.scaleLog()
-
-                svg.selectAll("path")
-                    .data(topo.features)
-                    .enter().append("path")
-                    .attr("d", path)
-                    .attr("fill", function (d) {
-                        const countryData = dataMap.get(d.properties.name);
-                        if (countryData) {
-                            return colorScale(countryData.dominant_purpose);
-                        }
-                        return "#eee";
-                    })
-                    .append("title") // Simple tooltip
-                    .text(d => {
-                        const c = dataMap.get(d.properties.name);
-                        return c ? `${d.properties.name}: ${c.dominant_purpose}` : d.properties.name;
+                // We only care about the dominant purpose
+                if (d.dominant_purpose && d.dominant_purpose !== "None") {
+                    dataMap.set(country, {
+                        purpose: d.dominant_purpose,
+                        amount: d.dominant_amount
                     });
-
+                    uniquePurposes.add(d.dominant_purpose);
+                }
             });
+
+            console.log("Found " + uniquePurposes.size + " unique dominant purposes.");
+
+            // --- 2. COLOR SCALE ---
+            // Use a categorical color scheme (Ordinal)
+            const categories = Array.from(uniquePurposes).sort();
+
+            // d3.schemeTableau10 is great for distinct categories, but if you have >10, 
+            // d3.scaleOrdinal will loop colors.
+            const colorScale = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(categories);
+
+            const tooltip = d3.select("#tooltip");
+
+            // --- 3. DRAW MAP ---
+            svg.selectAll("path")
+                .data(topo.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 0.5)
+                .attr("fill", function (d) {
+                    const countryName = d.properties.name;
+                    const record = dataMap.get(countryName);
+
+                    if (record) {
+                        return colorScale(record.purpose);
+                    } else {
+                        return "#e0e0e0"; // Gray for no data
+                    }
+                })
+                .on("mouseover", function (event, d) {
+                    d3.select(this)
+                        .attr("stroke", "black")
+                        .attr("stroke-width", 1.5)
+                        .style("opacity", 0.8);
+                    tooltip.style("opacity", 1);
+                })
+                .on("mousemove", function (event, d) {
+                    const countryName = d.properties.name;
+                    const record = dataMap.get(countryName);
+
+                    let htmlContent = `<strong>${countryName}</strong><br/>`;
+                    if (record) {
+                        htmlContent += `<span style="color:#ffa500">★</span> Dominant: <strong>${record.purpose}</strong><br/>`;
+                        htmlContent += `Amount: $${(record.amount / 1000000).toFixed(1)} M`;
+                    } else {
+                        htmlContent += "No data available";
+                    }
+
+                    tooltip.html(htmlContent)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this)
+                        .attr("stroke", "#fff")
+                        .attr("stroke-width", 0.5)
+                        .style("opacity", 1);
+                    tooltip.style("opacity", 0);
+                });
+
+            // --- 4. DRAW LEGEND ---
+            // Because there might be many categories, we use a flexbox layout below the map
+            const legendContainer = d3.select("#legend");
+
+            categories.forEach(cat => {
+                const item = legendContainer.append("div").attr("class", "legend-item");
+
+                item.append("div")
+                    .attr("class", "legend-color")
+                    .style("background-color", colorScale(cat));
+
+                item.append("span")
+                    .text(cat);
+            });
+
+        }).catch(err => {
+            console.error("Error:", err);
+            d3.select("#vis-container").append("p").text("Error loading data.");
         });
+
     </script>
 </body>
 
 </html>
-
-<!--
-
-// ... (Load D3 and data as above) ...
-
-const width = 960, height = 600;
-const svg = d3.select("body").append("svg").attr("width", width).attr("height", height);
-
-// Create a color scale for purposes
-const allDominant = Array.from(new Set(data.map(d => d.dominant_purpose)));
-const colorScale = d3.scaleOrdinal(d3.schemeSet3).domain(allDominant);
-
-// ... (Load GeoJSON and map it) ...
-
-svg.selectAll("path")
-    .data(topo.features)
-    .enter().append("path") 
-    .attr("d", path)
-    .attr("fill", function(d) {
-        const countryData = dataMap.get(d.properties.name);
-        if (countryData) {
-            return colorScale(countryData.dominant_purpose);
-        }
-        return "#eee"; 
-    })
-    .append("title") // Simple tooltip
-    .text(d => {
-        const c = dataMap.get(d.properties.name);
-        return c ? `${d.properties.name}: ${c.dominant_purpose}` : d.properties.name;
-    });
-
-// Add Legend (Crucial for Option B)
-// Iterate through colorScale.domain() to create legend items
-
--->
