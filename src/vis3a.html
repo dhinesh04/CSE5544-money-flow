@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Aid Distribution (JSON Source)</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; background: #f4f7f6; }
+        #controls { margin: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        select { padding: 8px; font-size: 16px; }
+        #vis-container { position: relative; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .legend text { font-size: 12px; }
+        .legend-title { font-weight: bold; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <label for="purposeSelect"><strong>Select Aid Purpose:</strong> </label>
+        <select id="purposeSelect"></select>
+    </div>
+
+    <div id="vis-container">
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+
+    <script>
+        const width = 1000;
+        const height = 600;
+        
+        // --- 1. NAME MAPPING ---
+        // Even with JSON, you still need this if your JSON says "United States" 
+        // but the map says "USA".
+        const nameMapping = {
+            "United States": "USA",
+            "United Kingdom": "England", 
+            "Korea": "South Korea",
+            "Slovak Republic": "Slovakia",
+            "Czech Republic": "Czech Republic", 
+            "Russian Federation": "Russia",
+            "Congo, Dem. Rep.": "Democratic Republic of the Congo",
+            "Tanzania": "United Republic of Tanzania"
+        };
+
+        const svg = d3.select("#vis-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const projection = d3.geoMercator()
+            .scale(130)
+            .translate([width / 2, height / 1.5]);
+            
+        const path = d3.geoPath().projection(projection);
+
+        Promise.all([
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
+            // --- CHANGE HERE: Load JSON instead of CSV ---
+            d3.json("../data/processed_aid_data.json") 
+        ]).then(([topo, jsonData]) => {
+
+            // const topPurposes = [
+            //     'Sectors not specified', 
+            //     'Social/ welfare services', 
+            //     'Strengthening civil society', 
+            //     'Higher education', 
+            //     'Multisector aid'
+            // ];
+            let topPurposes = [];
+            if (jsonData.length > 0 && jsonData[0].global_breakdown) {
+                // Object.keys returns ["Higher education", "Multisector aid", ...]
+                topPurposes = Object.keys(jsonData[0].global_breakdown);
+            }
+
+            // --- SIMPLIFIED DATA MAPPING ---
+            // We no longer need to calculate sums here. The JSON has them.
+            // Structure expected: { "country": "India", "global_breakdown": { "Purpose A": 100 } }
+            
+            const dataMap = new Map();
+
+            jsonData.forEach(d => {
+                let country = d.country;
+                // Apply name mapping
+                if (nameMapping[country]) {
+                    country = nameMapping[country];
+                }
+                
+                // Store the pre-calculated 'global_breakdown' object directly
+                if (d.global_breakdown) {
+                    dataMap.set(country, d.global_breakdown);
+                }
+            });
+
+            console.log("JSON Data Loaded. Map keys:", Array.from(dataMap.keys()));
+
+            // --- POPULATE DROPDOWN ---
+            const select = d3.select("#purposeSelect");
+            select.selectAll("option")
+                .data(topPurposes)
+                .enter().append("option")
+                .text(d => d)
+                .attr("value", d => d);
+
+            // --- DRAW MAP ---
+            const mapPaths = svg.selectAll("path")
+                .data(topo.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("stroke", "#999")
+                .attr("stroke-width", 0.5)
+                .attr("fill", "#eee")
+                .on("mouseover", function(event, d) {
+                    d3.select(this).attr("stroke", "black").attr("stroke-width", 1.5);
+                    tooltip.style("opacity", 1);
+                })
+                .on("mousemove", function(event, d) {
+                    const purpose = select.property("value");
+                    const countryName = d.properties.name; 
+                    
+                    const record = dataMap.get(countryName);
+                    // Direct access: record is now { "Purpose A": 100, ... }
+                    const value = (record && record[purpose]) ? record[purpose] : 0;
+                    
+                    const formattedValue = value > 0 
+                        ? "$" + (value / 1000000).toFixed(1) + " M" 
+                        : "No Data";
+
+                    tooltip.html(`<strong>${countryName}</strong><br/>${formattedValue}`)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).attr("stroke", "#999").attr("stroke-width", 0.5);
+                    tooltip.style("opacity", 0);
+                });
+
+            const tooltip = d3.select("#tooltip");
+
+            // --- UPDATE FUNCTION ---
+            function updateMap(selectedPurpose) {
+                // Find max value for this purpose
+                let maxVal = 0;
+                for (let [country, breakdown] of dataMap) {
+                    if (breakdown[selectedPurpose] > maxVal) {
+                        maxVal = breakdown[selectedPurpose];
+                    }
+                }
+                
+                const dynamicColorScale = d3.scaleSequential(d3.interpolateBlues)
+                     .domain([0, maxVal]);
+
+                mapPaths.transition().duration(750)
+                    .attr("fill", function(d) {
+                        const countryName = d.properties.name;
+                        const record = dataMap.get(countryName);
+                        
+                        if (record && record[selectedPurpose] > 0) {
+                            return dynamicColorScale(record[selectedPurpose]);
+                        } else {
+                            return "#eee"; 
+                        }
+                    });
+                
+                updateLegend(dynamicColorScale, maxVal);
+            }
+
+            function updateLegend(colorScale, maxVal) {
+                svg.select(".legend-group").remove();
+
+                const legendWidth = 300;
+                const legendHeight = 10;
+                const legendX = 20;
+                const legendY = height - 50;
+
+                const legendGroup = svg.append("g").attr("class", "legend-group")
+                    .attr("transform", `translate(${legendX}, ${legendY})`);
+
+                const defs = svg.append("defs");
+                const linearGradient = defs.append("linearGradient")
+                    .attr("id", "linear-gradient");
+                
+                linearGradient.selectAll("*").remove();
+
+                linearGradient.selectAll("stop")
+                    .data(d3.range(0, 1.1, 0.1))
+                    .enter().append("stop")
+                    .attr("offset", d => d * 100 + "%")
+                    .attr("stop-color", d => colorScale(d * maxVal));
+
+                legendGroup.append("rect")
+                    .attr("width", legendWidth)
+                    .attr("height", legendHeight)
+                    .style("fill", "url(#linear-gradient)");
+
+                legendGroup.append("text").attr("x", 0).attr("y", -5).text("0");
+                legendGroup.append("text").attr("x", legendWidth).attr("y", -5).attr("text-anchor", "end")
+                    .text("$" + (maxVal / 1000000).toFixed(0) + "M");
+                legendGroup.append("text").attr("x", 0).attr("y", 25).attr("class", "legend-title")
+                    .text("Commitment Amount (USD Constant)");
+            }
+
+            updateMap(topPurposes[0]);
+
+            select.on("change", function() {
+                updateMap(this.value);
+            });
+
+        }).catch(err => {
+            console.error("Error loading data:", err);
+            d3.select("#vis-container").append("p").text("Error loading JSON. Check console (F12).");
+        });
+    </script>
+</body>
+</html>

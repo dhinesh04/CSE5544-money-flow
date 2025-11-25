@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .map-container {
+            display: inline-block;
+            margin: 10px;
+        }
+
+        path {
+            stroke: #fff;
+            stroke-width: 0.5px;
+        }
+
+        h3 {
+            font-family: sans-serif;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="vis"></div>
+    <script>
+
+
+        Promise.all([
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"), // Example GeoJSON
+            d3.json("../data/processed_aid_data.json")
+        ]).then(([topo, data]) => {
+
+            const width = 960, height = 600;
+            const svg = d3.select("body").append("svg").attr("width", width).attr("height", height);
+
+            // Create a color scale for purposes
+            const allDominant = Array.from(new Set(data.map(d => d.dominant_purpose)));
+            const colorScale = d3.scaleOrdinal(d3.schemeSet3).domain(allDominant);
+
+
+            // Create a map for fast lookup: countryName -> dataObject
+            const dataMap = new Map(data.map(d => [d.country, d]));
+
+            globalPurposes.forEach(purpose => {
+                // Create a container for each map
+                const div = d3.select("#vis").append("div").attr("class", "map-container");
+                div.append("h3").text(purpose);
+
+                const svg = div.append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                const projection = d3.geoMercator()
+                    .scale(40)
+                    .translate([width / 2, height / 1.5]);
+
+                const path = d3.geoPath().projection(projection);
+
+                // Define Color Scale (Log scale handles large variances better)
+                const amounts = data.map(d => d.global_breakdown[purpose]).filter(v => v > 0);
+                const colorScale = d3.scaleSequential(d3.interpolateBlues)
+                    .domain([0, d3.max(amounts)]); // Or use d3.scaleLog()
+
+                svg.selectAll("path")
+                    .data(topo.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("fill", function (d) {
+                        const countryData = dataMap.get(d.properties.name);
+                        if (countryData) {
+                            return colorScale(countryData.dominant_purpose);
+                        }
+                        return "#eee";
+                    })
+                    .append("title") // Simple tooltip
+                    .text(d => {
+                        const c = dataMap.get(d.properties.name);
+                        return c ? `${d.properties.name}: ${c.dominant_purpose}` : d.properties.name;
+                    });
+
+            });
+        });
+    </script>
+</body>
+
+</html>
+
+<!--
+
+// ... (Load D3 and data as above) ...
+
+const width = 960, height = 600;
+const svg = d3.select("body").append("svg").attr("width", width).attr("height", height);
+
+// Create a color scale for purposes
+const allDominant = Array.from(new Set(data.map(d => d.dominant_purpose)));
+const colorScale = d3.scaleOrdinal(d3.schemeSet3).domain(allDominant);
+
+// ... (Load GeoJSON and map it) ...
+
+svg.selectAll("path")
+    .data(topo.features)
+    .enter().append("path") 
+    .attr("d", path)
+    .attr("fill", function(d) {
+        const countryData = dataMap.get(d.properties.name);
+        if (countryData) {
+            return colorScale(countryData.dominant_purpose);
+        }
+        return "#eee"; 
+    })
+    .append("title") // Simple tooltip
+    .text(d => {
+        const c = dataMap.get(d.properties.name);
+        return c ? `${d.properties.name}: ${c.dominant_purpose}` : d.properties.name;
+    });
+
+// Add Legend (Crucial for Option B)
+// Iterate through colorScale.domain() to create legend items
+
+-->
