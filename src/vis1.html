@@ -62,17 +62,9 @@
       font-weight: 600;
     }
     .dot {
-      opacity: 0.8;
+      opacity: 0.9;
       stroke-width: 1px;
       cursor: pointer;
-    }
-    .dot.net-donor {
-      fill: #2563eb;
-      stroke: #1d4ed8;
-    }
-    .dot.net-recipient {
-      fill: #f97316;
-      stroke: #ea580c;
     }
     .dot:hover {
       opacity: 1;
@@ -269,6 +261,13 @@
       return v.replace("G", "B");    // "1.5B"
     };
 
+    // Color scale: balance = (donated - received)/(donated + received) ∈ [-1, 1]
+    // -1 = pure recipient (red), +1 = pure donor (green)
+    const colorScale = d3.scaleSequential()
+      .domain([-1, 1])
+      .interpolator(d3.interpolateLab("#ef4444", "#22c55e")) // red → green
+      .clamp(true);
+
     let overallMode = false;
 
     // ---- Drill-down globals ----
@@ -436,7 +435,22 @@
     function update() {
       let data = getCurrentData();
 
-      // radius scale by total_flow
+      // ---- compute normalized balance for color ----
+      // balance = (donated - received) / (donated + received)
+      data.forEach(d => {
+        const donated = d.total_donated || 0;
+        const received = d.total_received || 0;
+        const denom = donated + received;
+        let balance = 0;
+        if (denom > 0) {
+          balance = (donated - received) / denom; // -1..1
+        } else {
+          balance = 0; // no flow → neutral
+        }
+        d._balance = balance;
+      });
+
+      // radius scale by total_flow (amount)
       const flowExtent = d3.extent(data, d => d.total_flow);
       const rScale = d3.scaleSqrt()
         .domain(flowExtent)
@@ -497,17 +511,14 @@
         .remove();
 
       const circlesEnter = circles.enter().append("circle")
-        .attr("r", 0);
+        .attr("r", 0)
+        .attr("class", "dot");
 
       const circlesMerged = circlesEnter.merge(circles)
-        .attr("class", d =>
-          "dot " + (d.total_donated >= d.total_received ? "net-donor" : "net-recipient")
-        )
         .on("mouseenter", (event, d) => showTooltip(event, d))
         .on("mousemove", (event, d) => moveTooltip(event))
         .on("mouseleave", hideTooltip)
         .on("click", (event, d) => {
-          // Always allow drilldown; it will choose year vs overall based on overallMode
           selectedCountry = d.country;
           updateDrilldown(d.country);
         });
@@ -516,7 +527,9 @@
         .duration(600)
         .attr("cx", d => xScale(safeVal(d.total_received)))
         .attr("cy", d => yScale(safeVal(d.total_donated)))
-        .attr("r", d => rScale(d.total_flow));
+        .attr("r", d => rScale(d.total_flow))
+        .attr("fill", d => colorScale(d._balance))
+        .attr("stroke", d => d3.color(colorScale(d._balance)).darker(0.9));
 
       // --- LABEL OUTLIERS (top 10 by |donated - received|) ---
       const withImbalance = data
@@ -555,8 +568,8 @@
 
     function drawLegend() {
       const items = [
-        { label: "Net Donor (Donated > Received)", class: "net-donor" },
-        { label: "Net Recipient (Received > Donated)", class: "net-recipient" }
+        { label: "Net Donor (Donated > Received)", value: 1 },
+        { label: "Net Recipient (Received > Donated)", value: -1 }
       ];
 
       const legItem = legendGroup.selectAll("g.legend-item")
@@ -570,7 +583,8 @@
         .attr("r", 5)
         .attr("cx", 0)
         .attr("cy", 0)
-        .attr("class", d => "dot " + d.class);
+        .attr("fill", d => colorScale(d.value))
+        .attr("stroke", d => d3.color(colorScale(d.value)).darker(0.9));
 
       legItem.append("text")
         .attr("x", 10)
