@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Aid Data – Visualization Dashboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #f4f7f6;
+      color: #111827;
+      display: flex;
+      justify-content: center;
+    }
+
+    .dashboard-container {
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.6rem;
+    }
+
+    .subtitle {
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+      color: #4b5563;
+      max-width: 700px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 1.2rem;
+    }
+
+    .vis-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      text-decoration: none;
+      color: inherit;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+      border: 1px solid #e5e7eb;
+      transition:
+        transform 0.15s ease,
+        box-shadow 0.15s ease,
+        border-color 0.15s ease,
+        background 0.15s ease;
+    }
+
+    .vis-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+      border-color: #3b82f6;
+      background: #f9fafb;
+    }
+
+    .vis-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .vis-tag {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.7rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #2563eb;
+      background: #eff6ff;
+      border-radius: 999px;
+      padding: 0.2rem 0.55rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .vis-desc {
+      font-size: 0.85rem;
+      color: #4b5563;
+      margin-bottom: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .vis-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #6b7280;
+      margin-top: auto;
+    }
+
+    .pill {
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      background: #f3f4f6;
+      font-size: 0.75rem;
+    }
+
+    .arrow {
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 1rem;
+      }
+      h1 {
+        font-size: 1.3rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <header>
+      <h1>Money Flow – A Geo Visualization Dashboard for AidData</h1>
+      <p class="subtitle">
+        Explore four complementary views of global aid: how much countries give vs receive,
+        where net donors and net recipients are, how funds are distributed by purpose,
+        and which purpose dominates in each country.
+      </p>
+    </header>
+
+    <main class="grid">
+      <!-- VIS 1: Donor vs Recipient Balance (scatterplot) -->
+      <a href="vis1.html" class="vis-card">
+        <div>
+          <div class="vis-title">Visualization 1: Donor vs. Recipient Balance</div>
+          <p class="vis-desc">
+            Country-level scatterplot of total aid <strong>donated</strong> (x-axis)
+            vs <strong>received</strong> (y-axis). Use the year slider, overall view toggle,
+            and log-scale option to explore patterns. Clicking a country reveals bar charts
+            of its top donors and top recipients.
+          </p>
+        </div>
+        <div class="vis-tag">Scatterplot · Drill-down · Bar chart</div>
+        <div class="vis-footer">
+          <span class="pill">Donors &amp; Receivers</span>
+          <span class="arrow">Open ↗</span>
+        </div>
+      </a>
+
+      <!-- VIS 2: Geographical Imbalance – Net Aid (map) -->
+      <a href="vis2.html" class="vis-card">
+        <div>
+          <div class="vis-title">Visualization 2: Geographic Clustering & Neighbor Contrasts</div>
+          <p class="vis-desc">
+            World map colored by <strong>net aid (donated − received)</strong> aggregated
+            over all years. Blue countries are net donors; red countries are net recipients.
+            Clicking a country opens drill-down bar charts of its top donor and recipient partners.
+          </p>
+        </div>
+        <div class="vis-tag"> Chloropeth Map · Drill-down · Pie chart</div>
+        <div class="vis-footer">
+          <span class="pill">Net donors vs recipients</span>
+          <span class="arrow">Open ↗</span>
+        </div>
+      </a>
+
+      <!-- VIS 3A: Global Aid Distribution by Purpose (map + dropdown) -->
+      <a href="vis3a.html" class="vis-card">
+        <div>
+          <div class="vis-title">Visualization 3A: Aid Purpose Distribution Map</div>
+          <p class="vis-desc">
+            Choropleth map built from JSON data showing total aid commitments per country
+            for a <strong>selected aid purpose</strong>. Use the dropdown to switch sectors;
+            color intensity increases with the commitment amount, with a legend indicating
+            the 0 → max range.
+          </p>
+        </div>
+        <div class="vis-tag">Chloropeth Map · Filter</div>
+        <div class="vis-footer">
+          <span class="pill">Purpose-specific amounts</span>
+          <span class="arrow">Open ↗</span>
+        </div>
+      </a>
+
+      <!-- VIS 3B: Dominant Aid Purpose by Country (categorical map) -->
+      <a href="vis3b.html" class="vis-card">
+        <div>
+          <div class="vis-title">Visualization 3B: Dominant Aid Purpose Distribution</div>
+          <p class="vis-desc">
+            Categorical world map where each country is colored by the
+            <strong>aid sector that receives the largest share of funding</strong>.
+            The legend lists all aid purposes with their corresponding colors.
+          </p>
+        </div>
+        <div class="vis-tag"> Chloropeth Map · Categories</div>
+        <div class="vis-footer">
+          <span class="pill">Leading sector per country</span>
+          <span class="arrow">Open ↗</span>
+        </div>
+      </a>
+    </main>
+  </div>
+</body>
+</html>
