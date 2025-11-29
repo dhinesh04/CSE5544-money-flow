@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Local Aid Composition (Glyph Map)</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 20px;
+        }
+
+        p {
+            color: #666;
+            font-size: 14px;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        #vis-container {
+            position: relative;
+            background: #aadaff;
+            /* Ocean color */
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+            /* Hide map when panning */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 10px;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.1s;
+            border: 1px solid #ddd;
+            box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+        }
+
+        .country {
+            fill: #f0f0f0;
+            stroke: #fff;
+            stroke-width: 0.5px;
+        }
+
+        .legend-container {
+            display: flex;
+            flex-wrap: wrap;
+            max-width: 1000px;
+            margin-top: 15px;
+            justify-content: center;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+            margin-bottom: 5px;
+            font-size: 11px;
+        }
+
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            margin-right: 5px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Local Top 5 Aid Purposes</h2>
+    <p>Each pie chart represents the top 5 funding sources for that specific country. <strong>Scroll to Zoom, Drag to
+            Pan.</strong></p>
+
+    <div id="vis-container">
+        <div id="tooltip" class="tooltip"></div>
+    </div>
+
+    <div id="legend" class="legend-container"></div>
+
+    <script>
+        const width = 1000;
+        const height = 600;
+
+        // Name Mapping to ensure data matches the map
+        const nameMapping = {
+            "United States": "USA",
+            "United Kingdom": "England",
+            "Korea": "South Korea",
+            "Slovak Republic": "Slovakia",
+            "Czech Republic": "Czech Republic",
+            "Russian Federation": "Russia",
+            "Congo, Dem. Rep.": "Democratic Republic of the Congo",
+            "Tanzania": "United Republic of Tanzania",
+            "Egypt, Arab Rep.": "Egypt",
+            "Venezuela, RB": "Venezuela",
+            "Iran, Islamic Rep.": "Iran",
+            "Syrian Arab Republic": "Syria"
+        };
+
+        const svg = d3.select("#vis-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        // Group for Map Content (to apply zoom)
+        const g = svg.append("g");
+
+        // Zoom Behavior
+        const zoom = d3.zoom()
+            .scaleExtent([1, 8]) // Min zoom 1x, Max zoom 8x
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
+
+        const projection = d3.geoMercator()
+            .scale(130)
+            .translate([width / 2, height / 1.5]);
+
+        const path = d3.geoPath().projection(projection);
+        const pie = d3.pie().value(d => d.amount).sort(null);
+        const arc = d3.arc().innerRadius(0).outerRadius(8); // Radius of the pies
+
+        Promise.all([
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
+            d3.json("../data/processed_aid_data.json")
+        ]).then(([topo, jsonData]) => {
+
+            // --- 1. DATA PREP ---
+            const dataMap = new Map();
+            const allPurposes = new Set();
+
+            jsonData.forEach(d => {
+                let country = d.country;
+                if (nameMapping[country]) country = nameMapping[country];
+
+                // Keep only relevant data
+                if (d.local_top_5 && d.local_top_5.length > 0) {
+                    dataMap.set(country, d.local_top_5);
+
+                    // Collect purposes for the color scale
+                    d.local_top_5.forEach(item => allPurposes.add(item.purpose));
+                }
+            });
+
+            // Color Scale
+            const colorScale = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(Array.from(allPurposes));
+
+            const tooltip = d3.select("#tooltip");
+            const container = document.getElementById("vis-container");
+            // --- 2. DRAW BASE MAP ---
+            g.selectAll("path")
+                .data(topo.features)
+                .enter().append("path")
+                .attr("class", "country")
+                .attr("d", path);
+
+            // --- 3. DRAW PIE CHARTS ---
+            // We iterate through GeoJSON features to find centroids
+            topo.features.forEach(feature => {
+                const countryName = feature.properties.name;
+                const localData = dataMap.get(countryName);
+
+                // Only draw if we have data and can find a centroid
+                if (localData && path.centroid(feature)) {
+                    const [x, y] = path.centroid(feature);
+
+                    // Create a group for this country's pie
+                    const pieGroup = g.append("g")
+                        .attr("transform", `translate(${x},${y})`);
+
+                    // Draw Slices
+                    pieGroup.selectAll("path")
+                        .data(pie(localData))
+                        .enter().append("path")
+                        .attr("d", arc)
+                        .attr("fill", d => colorScale(d.data.purpose))
+                        .attr("stroke", "#fff")
+                        .attr("stroke-width", "0.5px")
+
+                        // Tooltip Interaction
+                        .on("mouseover", function (event, d) {
+                            d3.select(this).attr("stroke", "black");
+                            tooltip.style("opacity", 1);
+                        })
+                        .on("mousemove", function (event, d) {
+                            const [mx, my] = d3.pointer(event, container);
+                            tooltip.html(`
+                                <strong>${countryName}</strong><br/>
+                                ${d.data.purpose}<br/>
+                                <span style="color:#666">$${(d.data.amount / 1000000).toFixed(1)} M</span>
+                            `)
+                                .style("left", (mx + 15) + "px") // Offset slightly to the right of mouse
+                                .style("top", (my - 15) + "px"); // Offset slightly up
+                        })
+                        .on("mouseout", function () {
+                            d3.select(this).attr("stroke", "#fff");
+                            tooltip.style("opacity", 0);
+                        });
+                }
+            });
+
+            // --- 4. LEGEND ---
+            // Only show top 15 most frequent purposes to avoid a massive legend
+            // Or show all if manageable. Here we show unique ones found in the map.
+            const uniqueList = Array.from(allPurposes).sort().slice(0, 20); // Limit to 20 for layout sanity
+
+            const legendContainer = d3.select("#legend");
+            uniqueList.forEach(purpose => {
+                const item = legendContainer.append("div").attr("class", "legend-item");
+                item.append("div").attr("class", "legend-color").style("background-color", colorScale(purpose));
+                item.append("span").text(purpose);
+            });
+
+        }).catch(err => {
+            console.error(err);
+        });
+
+    </script>
+</body>
+
+</html>
