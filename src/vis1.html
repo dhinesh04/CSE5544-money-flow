@@ -261,13 +261,18 @@
       return v.replace("G", "B");    // "1.5B"
     };
 
-    // Color scale: balance = (donated - received)/(donated + received) ∈ [-1, 1]
-    // -1 = pure recipient (red), +1 = pure donor (green)
-    const colorScale = d3.scaleSequential()
-      .domain([-1, 1])
-      .interpolator(d3.interpolateLab("#ef4444", "#22c55e")) // red → green
-      .clamp(true);
 
+    const colorScale = d3.scaleDiverging()
+    .domain([-1, 0, 1])
+    .interpolator(d3.interpolateRgbBasis([
+      "#7c2d12", // dark orange / brownish  → strongest net recipient
+      "#fdba74", // soft orange             → moderate recipient
+      "#e5e7eb", // light grey              → balanced
+      "#93c5fd", // soft blue               → moderate donor
+      "#1d4ed8"  // dark blue               → strongest net donor
+    ]))
+    .clamp(true);
+    
     let overallMode = false;
 
     // ---- Drill-down globals ----
@@ -523,13 +528,16 @@
           updateDrilldown(d.country);
         });
 
-      circlesMerged.transition()
-        .duration(600)
-        .attr("cx", d => xScale(safeVal(d.total_received)))
-        .attr("cy", d => yScale(safeVal(d.total_donated)))
-        .attr("r", d => rScale(d.total_flow))
-        .attr("fill", d => colorScale(d._balance))
-        .attr("stroke", d => d3.color(colorScale(d._balance)).darker(0.9));
+      circlesMerged
+      .transition()
+      .duration(600)
+      .attr("cx", d => xScale(safeVal(d.total_received)))
+      .attr("cy", d => yScale(safeVal(d.total_donated)))
+      .attr("r", d => rScale(d.total_flow))          // size = total flow (secondary cue)
+      .attr("fill", d => colorScale(d._balance))     // color = donor/recipient balance
+      // secondary visual cue via stroke:
+      .attr("stroke", d => d._balance >= 0 ? "#0f172a" : "#4b5563") // darker outline for net donors
+      .attr("stroke-width", d => d._balance >= 0 ? 1.5 : 0.8);
 
       // --- LABEL OUTLIERS (top 10 by |donated - received|) ---
       const withImbalance = data
