@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Global Aid Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #dashboard {
+            display: flex;
+            flex-direction: column;
+            width: 90%;
+            max-width: 1200px;
+            margin: 20px auto;
+            gap: 20px;
+            padding-bottom: 50px;
+        }
+
+        /* Top Panel: Map */
+        #map-container {
+            width: 100%;
+            height: 60vh;
+            min-height: 400px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            /* This traps tooltips if they are inside! */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Bottom Panel: Chart */
+        #chart-container {
+            width: 100%;
+            height: 400px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 {
+            margin: 0 0 5px 0;
+            color: #333;
+            font-size: 1.5rem;
+            padding: 15px 20px 0 20px;
+        }
+
+        h3 {
+            margin: 0 0 15px 0;
+            color: #555;
+            font-size: 1.2rem;
+        }
+
+        p.hint {
+            color: #888;
+            font-style: italic;
+            font-size: 0.9rem;
+            margin: 0;
+            padding: 0 20px 15px 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        /* Tooltip: Now Global */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            pointer-events: none;
+            /* Crucial so mouse events pass through */
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.1s;
+            z-index: 9999;
+            /* Ensure it floats above everything */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            line-height: 1.4em;
+        }
+
+        path {
+            stroke: white;
+            stroke-width: 0.5px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        path:hover {
+            stroke: black;
+            stroke-width: 1.5px;
+            opacity: 0.8;
+        }
+
+        path.selected {
+            stroke: #333;
+            stroke-width: 2px;
+            filter: brightness(0.9);
+        }
+
+        .bar {
+            fill-opacity: 0.8;
+            transition: width 0.75s ease;
+            cursor: pointer;
+        }
+
+        .bar:hover {
+            fill-opacity: 1;
+            stroke: #333;
+            stroke-width: 1px;
+        }
+
+        .axis-text {
+            font-size: 12px;
+            fill: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="tooltip" class="tooltip"></div>
+
+    <div id="dashboard">
+        <div id="map-container">
+            <h2>Global Aid Distribution</h2>
+            <p class="hint">Color represents the #1 dominant aid purpose. <strong>Click a country</strong> to see
+                details below.</p>
+            <div id="map-vis" style="flex-grow: 1; width: 100%; height: 100%;"></div>
+        </div>
+
+        <div id="chart-container">
+            <h3 id="chart-title">Select a Country</h3>
+            <div id="chart-vis" style="flex-grow: 1; width: 100%; height: 100%;"></div>
+        </div>
+    </div>
+
+    <script>
+        const mapWidth = 960;
+        const mapHeight = 500;
+
+        const nameMapping = {
+            "United States": "USA", "United Kingdom": "England", "Korea": "South Korea",
+            "Slovak Republic": "Slovakia", "Czech Republic": "Czech Republic", "Russian Federation": "Russia",
+            "Congo, Dem. Rep.": "Democratic Republic of the Congo", "Tanzania": "United Republic of Tanzania",
+            "Egypt, Arab Rep.": "Egypt", "Venezuela, RB": "Venezuela", "Iran, Islamic Rep.": "Iran",
+            "Syrian Arab Republic": "Syria"
+        };
+
+        const mapSvg = d3.select("#map-vis").append("svg")
+            .attr("viewBox", `0 0 ${mapWidth} ${mapHeight}`)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .style("width", "100%")
+            .style("height", "100%");
+
+        const projection = d3.geoMercator()
+            .scale(140)
+            .translate([mapWidth / 2, mapHeight / 1.5]);
+        const path = d3.geoPath().projection(projection);
+
+        // Chart Config
+        const chartTotalWidth = 800;
+        const chartTotalHeight = 300;
+        const chartMargin = { top: 20, right: 50, bottom: 40, left: 270 };
+
+        const chartWidth = chartTotalWidth - chartMargin.left - chartMargin.right;
+        const chartHeight = chartTotalHeight - chartMargin.top - chartMargin.bottom;
+
+        const chartSvg = d3.select("#chart-vis").append("svg")
+            .attr("viewBox", `0 0 ${chartTotalWidth} ${chartTotalHeight}`)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .style("width", "100%")
+            .style("height", "100%")
+            .append("g")
+            .attr("transform", `translate(${chartMargin.left},${chartMargin.top})`);
+
+        const x = d3.scaleLinear().range([0, chartWidth]);
+        const y = d3.scaleBand().range([0, chartHeight]).padding(0.3);
+
+        const xAxisGroup = chartSvg.append("g").attr("transform", `translate(0,${chartHeight})`);
+        const yAxisGroup = chartSvg.append("g");
+
+        // GLOBAL TOOLTIP SELECTION
+        const tooltip = d3.select("#tooltip");
+
+        Promise.all([
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
+            d3.json("../data/processed_aid_data.json")
+        ]).then(([topo, jsonData]) => {
+
+            const dataMap = new Map();
+            const allPurposes = new Set();
+
+            jsonData.forEach(d => {
+                let country = d.country;
+                if (nameMapping[country]) country = nameMapping[country];
+
+                if (d.dominant_purpose && d.dominant_purpose !== "None") {
+                    dataMap.set(country, d);
+                    allPurposes.add(d.dominant_purpose);
+                    if (d.local_top_5) d.local_top_5.forEach(p => allPurposes.add(p.purpose));
+                }
+            });
+
+            const colorScale = d3.scaleOrdinal(d3.schemeTableau10)
+                .domain(Array.from(allPurposes).sort());
+
+            const g = mapSvg.append("g");
+            const zoom = d3.zoom().scaleExtent([1, 8]).on("zoom", (event) => g.attr("transform", event.transform));
+            mapSvg.call(zoom);
+
+            const countries = g.selectAll("path")
+                .data(topo.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("fill", d => {
+                    const record = dataMap.get(d.properties.name);
+                    return record ? colorScale(record.dominant_purpose) : "#eee";
+                })
+                .on("mouseover", function (event, d) {
+                    const record = dataMap.get(d.properties.name);
+                    if (record) {
+                        d3.select(this).style("opacity", 0.7);
+                        tooltip.style("opacity", 1)
+                            .html(`<strong>${d.properties.name}</strong><br/>Dominant: ${record.dominant_purpose}`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    }
+                })
+                .on("mousemove", (event) => {
+                    tooltip.style("left", (event.pageX + 10) + "px").style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function () {
+                    d3.select(this).style("opacity", 1);
+                    tooltip.style("opacity", 0);
+                })
+                .on("click", function (event, d) {
+                    const countryName = d.properties.name;
+                    const record = dataMap.get(countryName);
+
+                    countries.classed("selected", false);
+                    d3.select(this).classed("selected", true);
+
+                    updateChart(countryName, record);
+
+                    document.getElementById("chart-container").scrollIntoView({ behavior: "smooth" });
+                });
+
+            // --- UPDATE CHART ---
+            function updateChart(countryName, record) {
+                d3.select("#chart-title").text(record ? `Top 5 Purposes: ${countryName}` : `No Data for ${countryName}`);
+
+                if (!record || !record.local_top_5) {
+                    chartSvg.selectAll(".bar").remove();
+                    xAxisGroup.call(d3.axisBottom(x).ticks(0));
+                    yAxisGroup.call(d3.axisLeft(y).tickFormat(""));
+                    return;
+                }
+
+                const data = record.local_top_5;
+
+                x.domain([0, d3.max(data, d => d.amount)]);
+                y.domain(data.map(d => d.purpose));
+
+                xAxisGroup.transition().duration(750)
+                    .call(d3.axisBottom(x).ticks(5).tickFormat(d => "$" + (d / 1e6).toFixed(0) + "M"))
+                    .selectAll("text")
+                    .style("font-size", "12px");
+
+                yAxisGroup.transition().duration(750)
+                    .call(d3.axisLeft(y))
+                    .selectAll("text")
+                    .style("font-size", "13px")
+                    .style("font-weight", "500")
+                    .call(wrap, chartMargin.left - 10);
+
+                const bars = chartSvg.selectAll(".bar")
+                    .data(data, d => d.purpose);
+
+                bars.exit().remove();
+
+                bars.enter().append("rect")
+                    .attr("class", "bar")
+                    .attr("y", d => y(d.purpose))
+                    .attr("height", y.bandwidth())
+                    .attr("x", 0)
+                    .attr("width", 0)
+                    .attr("fill", d => colorScale(d.purpose))
+                    // --- TOOLTIP LOGIC FOR BARS ---
+                    .on("mouseover", function (event, d) {
+                        d3.select(this).attr("fill", "#222");
+                        tooltip.style("opacity", 1)
+                            .html(`<strong>${d.purpose}</strong><br/>$${(d.amount / 1000000).toFixed(2)} Million`)
+                            .style("left", (event.pageX + 15) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip.style("left", (event.pageX + 15) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", function (event, d) {
+                        d3.select(this).attr("fill", colorScale(d.purpose));
+                        tooltip.style("opacity", 0);
+                    })
+                    .merge(bars)
+                    .transition().duration(750)
+                    .attr("y", d => y(d.purpose))
+                    .attr("height", y.bandwidth())
+                    .attr("x", 0)
+                    .attr("width", d => x(d.amount))
+                    .attr("fill", d => colorScale(d.purpose));
+            }
+
+            function wrap(text, width) {
+                text.each(function () {
+                    let text = d3.select(this),
+                        words = text.text().split(/\s+/).reverse(),
+                        word, line = [], lineNumber = 0, lineHeight = 1.1,
+                        y = text.attr("y"), dy = parseFloat(text.attr("dy")),
+                        tspan = text.text(null).append("tspan").attr("x", -10).attr("y", y).attr("dy", dy + "em");
+                    while (word = words.pop()) {
+                        line.push(word);
+                        tspan.text(line.join(" "));
+                        if (tspan.node().getComputedTextLength() > width) {
+                            line.pop();
+                            tspan.text(line.join(" "));
+                            line = [word];
+                            tspan = text.append("tspan").attr("x", -10).attr("y", y).attr("dy", ++lineNumber * lineHeight + dy + "em").text(word);
+                        }
+                    }
+                });
+            }
+
+            d3.select("#chart-title").text("Click a country on the map to see details");
+
+        }).catch(err => console.error("Error:", err));
+
+    </script>
+</body>
+
+</html>
