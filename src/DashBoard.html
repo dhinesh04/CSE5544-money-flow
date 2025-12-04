@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AidData – Money Flow Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg: #050816;
+      --bg-card: #111827;
+      --bg-card-soft: #020617;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --accent-strong: #0ea5e9;
+      --text: #e5e7eb;
+      --text-muted: #9ca3af;
+      --border-soft: #1f2937;
+      --danger: #f97373;
+      --bg-gradient: radial-gradient(circle at top, #0b1220 0, #020617 45%, #000 100%);
+      --card-gradient: radial-gradient(circle at top left, #020617, #020617 40%, #000 100%);
+      --button-gradient: radial-gradient(circle at top left, #0f172a 0, #020617 60%);
+    }
+
+    /* Light theme overrides */
+    body.light-theme {
+      --bg: #f3f4f6;
+      --bg-card: #ffffff;
+      --bg-card-soft: #f9fafb;
+      --accent: #2563eb;
+      --accent-soft: rgba(37, 99, 235, 0.12);
+      --accent-strong: #1d4ed8;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --border-soft: #e5e7eb;
+      --danger: #b91c1c;
+      --bg-gradient: radial-gradient(circle at top, #ffffff 0, #e5e7eb 45%, #d1d5db 100%);
+      --card-gradient: radial-gradient(circle at top left, #ffffff, #f9fafb 40%, #e5e7eb 100%);
+      --button-gradient: radial-gradient(circle at top left, #eff6ff 0, #e0f2fe 60%);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .title-block h1 {
+      font-size: 1.8rem;
+      letter-spacing: 0.03em;
+      margin-bottom: 4px;
+    }
+
+    .title-block p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      max-width: 620px;
+    }
+
+    .header-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .theme-toggle {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.12s ease-out, transform 0.12s ease-out,
+        box-shadow 0.12s ease-out, border-color 0.12s ease-out;
+    }
+
+    .theme-toggle:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent-strong);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.6);
+    }
+
+    body.light-theme .theme-toggle {
+      background: #eff6ff;
+      box-shadow: 0 6px 14px rgba(148, 163, 184, 0.5);
+    }
+
+    .tag {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: var(--accent);
+      background: linear-gradient(
+        135deg,
+        rgba(56, 189, 248, 0.08),
+        rgba(30, 64, 175, 0.02)
+      );
+    }
+
+    /* Buttons row */
+
+    .nav-section {
+      margin-bottom: 24px;
+    }
+
+    .nav-title {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .nav-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .nav-button {
+      flex: 1 1 180px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: var(--button-gradient);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: transform 0.12s ease-out, box-shadow 0.12s ease-out,
+        border-color 0.12s ease-out, background 0.15s ease-out;
+      cursor: pointer;
+    }
+
+    .nav-button span.label {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-button span.label-strong {
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .nav-button span.label-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .nav-button span.pill {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      color: var(--accent);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .nav-button:hover {
+        transform: translateY(-1px);
+        border-color: var(--accent-strong);
+        box-shadow: 0 16px 30px rgba(15, 23, 42, 0.75);
+        /* use theme-dependent gradient instead of hard-coded dark one */
+        background: var(--button-gradient);
+    }
+    body.light-theme .nav-button:hover {
+        box-shadow: 0 12px 24px rgba(148, 163, 184, 0.7);   
+    }
+
+    body.light-theme .nav-button {
+      box-shadow: 0 8px 16px rgba(148, 163, 184, 0.5);
+    }
+
+    /* Main layout for charts */
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 880px) {
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .header-controls {
+        align-items: flex-start;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      position: relative;
+      background: var(--card-gradient);
+      border-radius: 18px;
+      border: 1px solid var(--border-soft);
+      padding: 14px 14px 10px;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.75);
+    }
+
+    body.light-theme .card {
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.15);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .card-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(15, 118, 110, 0.08);
+      border: 1px solid rgba(45, 212, 191, 0.4);
+      color: #22c55e;
+    }
+
+    .chart {
+      margin-top: 4px;
+    }
+
+    .chart svg {
+      width: 100%;
+      height: 230px;
+      display: block;
+    }
+
+    .chart-footer {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chart-footer span.emph {
+      color: var(--accent);
+    }
+
+    .legend-pill {
+      font-size: 0.7rem;
+      border-radius: 999px;
+      padding: 2px 8px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    /* Axes & bars */
+    .axis path,
+    .axis line {
+    /* use theme variable instead of hard-coded dark color */
+        stroke: var(--border-soft);
+        stroke-width: 1;
+    }
+
+    .axis text {
+        fill: var(--text-muted);
+        font-size: 10px;
+    }
+
+    /* Make axes a bit darker / clearer in light mode */
+    body.light-theme .axis path,
+    body.light-theme .axis line {
+        stroke: #9ca3af;      /* medium gray */
+    }
+
+    body.light-theme .axis text {
+        fill: #4b5563;        /* darker labels for readability */
+    }
+
+    .bar {
+      fill: var(--accent-soft);
+      stroke: var(--accent-strong);
+      stroke-width: 0.6;
+    }
+
+    .bar:hover {
+      fill: rgba(56, 189, 248, 0.3);
+    }
+
+    .line-path {
+      fill: none;
+      stroke: var(--accent-strong);
+      stroke-width: 1.8;
+    }
+
+    .dot {
+      fill: #facc15;
+      stroke: #0f172a;
+      stroke-width: 1;
+    }
+
+    .missing-bar {
+      fill: rgba(248, 113, 113, 0.35);
+      stroke: var(--danger);
+      stroke-width: 0.8;
+    }
+
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      padding: 6px 8px;
+      font-size: 0.75rem;
+      color: var(--text);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.1s ease-out, transform 0.1s ease-out;
+      z-index: 10;
+      max-width: 260px;
+      white-space: nowrap;
+    }
+
+    body.light-theme .tooltip {
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    .tooltip strong {
+      color: var(--accent);
+    }
+
+    .tooltip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .tooltip-row span.key {
+      color: var(--text-muted);
+    }
+
+    .tooltip-row span.val {
+      font-weight: 500;
+    }
+    
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="title-block">
+        <h1>Money Flow Overview Dashboard</h1>
+        <p>
+          This dashboard gives a quick, high-level overview of the AidData “money flow” dataset:
+          basic data quality, how commitments change over time, and which donors and recipients
+          dominate the flows. Use the buttons below to jump into the detailed visualizations.
+        </p>
+      </div>
+      <div class="header-controls">
+        <button id="themeToggle" class="theme-toggle">Light theme</button>
+        <div class="tag">CSE 5544 • Aid &amp; Money Flows</div>
+      </div>
+    </header>
+
+    <!-- Navigation to your main visualizations -->
+    <section class="nav-section">
+      <div class="nav-title">Jump to detailed visualizations</div>
+      <div class="nav-buttons">
+        <!-- Update hrefs if needed -->
+        <a class="nav-button" href="vis1.html">
+          <span class="label">
+            <span class="label-strong">Donor vs Recipient Balance</span>
+            <span class="label-sub">Map + scatter of net aid and balance</span>
+          </span>
+          <span class="pill">Vis 1</span>
+        </a>
+
+        <a class="nav-button" href="vis2.html">
+          <span class="label">
+            <span class="label-strong">Aid Mix by Country</span>
+            <span class="label-sub">Composition of aid types across countries</span>
+          </span>
+          <span class="pill">Vis 2</span>
+        </a>
+
+        <a class="nav-button" href="vis3.html">
+          <span class="label">
+            <span class="label-strong">Donor–Recipient Relationships</span>
+            <span class="label-sub">Who gives to whom, and how much?</span>
+          </span>
+          <span class="pill">Vis 3</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- Charts grid -->
+    <section class="grid">
+      <!-- Missing data -->
+      <article class="card" id="card-missing">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Missing Data by Column</div>
+            <div class="card-subtitle">How complete is the dataset?</div>
+          </div>
+          <span class="badge">Data quality</span>
+        </div>
+        <div class="chart" id="chart-missing"></div>
+        <div class="chart-footer">
+          <span>Columns with higher <span class="emph">red bars</span> need extra care in analysis.</span>
+          <span class="legend-pill">Bar = % rows with missing values</span>
+        </div>
+      </article>
+
+      <!-- Commitments over time -->
+      <article class="card" id="card-time">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Total Commitments Over Time</div>
+            <div class="card-subtitle">Sum of constant USD commitments by year</div>
+          </div>
+          <span class="badge">Trend</span>
+        </div>
+        <div class="chart" id="chart-time"></div>
+        <div class="chart-footer">
+          <span>Shows how the <span class="emph">overall volume of aid</span> evolves.</span>
+          <span class="legend-pill">Line = total commitment per year</span>
+        </div>
+      </article>
+
+      <!-- Combined donors vs recipients -->
+      <article class="card" id="card-donor-recipient">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Top Donors vs Top Recipients</div>
+            <div class="card-subtitle">Mirrored bar chart of total commitments</div>
+          </div>
+          <span class="badge">Donors / Recipients</span>
+        </div>
+        <div class="chart" id="chart-donor-recipient"></div>
+        <div class="chart-footer">
+          <span>Left: <span class="emph">top donors</span>. Right: <span class="emph">top recipients</span>.</span>
+          <span class="legend-pill">Bar length = total commitments</span>
+        </div>
+      </article>
+
+      <!-- Top purposes -->
+      <article class="card" id="card-purpose">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Top Aid Purposes</div>
+            <div class="card-subtitle">Where is the money going?</div>
+          </div>
+          <span class="badge">Purposes</span>
+        </div>
+        <div class="chart" id="chart-purpose"></div>
+        <div class="chart-footer">
+          <span>Shows the <span class="emph">dominant sectors</span> by committed amount.</span>
+          <span class="legend-pill">Bars sorted by total commitments</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Tooltip (one shared instance) -->
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <script>
+    // === CONFIG ===
+    const DATA_PATH = "../data/aiddata-countries-only.csv";
+
+    const tooltip = d3.select("#tooltip");
+
+    // Theme toggle
+    const themeToggle = document.getElementById("themeToggle");
+    let isLight = false;
+    themeToggle.addEventListener("click", () => {
+      isLight = !isLight;
+      document.body.classList.toggle("light-theme", isLight);
+      themeToggle.textContent = isLight ? "Dark theme" : "Light theme";
+    });
+
+    function showTooltip(html, event) {
+      tooltip
+        .html(html)
+        .style("left", (event.pageX + 14) + "px")
+        .style("top", (event.pageY + 10) + "px")
+        .style("opacity", 1)
+        .style("transform", "translateY(0)");
+    }
+
+    function hideTooltip() {
+      tooltip
+        .style("opacity", 0)
+        .style("transform", "translateY(4px)");
+    }
+
+    // === LOAD DATA ===
+    d3.csv(DATA_PATH).then(raw => {
+      const data = raw.map(d => ({
+        ...d,
+        year: +d.year,
+        commitment_amount_usd_constant: +d.commitment_amount_usd_constant
+      }));
+
+      renderMissingChart(raw);
+      renderTimeSeries(data);
+      renderDonorRecipientChart(data);
+      renderTopPurposes(data);
+    }).catch(err => {
+      console.error("Error loading CSV:", err);
+    });
+
+    // === 1. MISSING DATA CHART ===
+    function renderMissingChart(raw) {
+      const container = d3.select("#chart-missing");
+      container.selectAll("*").remove();
+
+      const margin = { top: 10, right: 10, bottom: 45, left: 70 };
+      const width = container.node().getBoundingClientRect().width || 360;
+      const height = 220;
+
+      const svg = container
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      const columns = raw.columns || Object.keys(raw[0]);
+      const nRows = raw.length;
+
+      const missingStats = columns.map(col => {
+        let missingCount = 0;
+        raw.forEach(row => {
+          const v = row[col];
+          if (
+            v === null ||
+            v === undefined ||
+            v === "" ||
+            (typeof v === "string" && v.trim().toLowerCase() === "na")
+          ) {
+            missingCount += 1;
+          }
+        });
+        return {
+          column: col,
+          missingCount,
+          pctMissing: nRows > 0 ? (missingCount / nRows) * 100 : 0
+        };
+      });
+
+      const x = d3.scaleLinear()
+        .domain([0, d3.max(missingStats, d => d.pctMissing) || 0])
+        .nice()
+        .range([margin.left, width - margin.right]);
+
+      const y = d3.scaleBand()
+        .domain(missingStats.map(d => d.column))
+        .range([margin.top, height - margin.bottom])
+        .padding(0.18);
+
+      const xAxis = d3.axisBottom(x)
+        .ticks(4)
+        .tickFormat(d => d + "%");
+
+      const yAxis = d3.axisLeft(y);
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0, ${height - margin.bottom})`)
+        .call(xAxis);
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(${margin.left}, 0)`)
+        .call(yAxis)
+        .selectAll("text")
+        .style("font-size", "9px");
+
+      svg.selectAll(".missing-bar")
+        .data(missingStats)
+        .enter()
+        .append("rect")
+        .attr("class", "missing-bar")
+        .attr("x", x(0))
+        .attr("y", d => y(d.column))
+        .attr("height", y.bandwidth())
+        .attr("width", d => x(d.pctMissing) - x(0))
+        .on("mousemove", (event, d) => {
+          const html = `
+            <div><strong>${d.column}</strong></div>
+            <div class="tooltip-row">
+              <span class="key">Missing:</span>
+              <span class="val">${d.missingCount} rows (${d.pctMissing.toFixed(1)}%)</span>
+            </div>
+          `;
+          showTooltip(html, event);
+        })
+        .on("mouseleave", hideTooltip);
+    }
+
+    // === 2. TOTAL COMMITMENTS OVER TIME ===
+    function renderTimeSeries(data) {
+      const container = d3.select("#chart-time");
+      container.selectAll("*").remove();
+
+      const margin = { top: 14, right: 16, bottom: 38, left: 52 };
+      const width = container.node().getBoundingClientRect().width || 360;
+      const height = 220;
+
+      const svg = container
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      const grouped = d3.rollup(
+        data.filter(d => !isNaN(d.year) && !isNaN(d.commitment_amount_usd_constant)),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.year
+      );
+
+      const years = Array.from(grouped.keys()).sort((a, b) => a - b);
+      const series = years.map(year => ({
+        year,
+        total: grouped.get(year)
+      }));
+
+      const x = d3.scaleLinear()
+        .domain(d3.extent(series, d => d.year))
+        .range([margin.left, width - margin.right]);
+
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(series, d => d.total) || 0])
+        .nice()
+        .range([height - margin.bottom, margin.top]);
+
+      const xAxis = d3.axisBottom(x)
+        .ticks(6)
+        .tickFormat(d3.format("d"));
+      const yAxis = d3.axisLeft(y)
+        .ticks(4)
+        .tickFormat(d => d3.format(".2s")(d).replace("G", "B"));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0, ${height - margin.bottom})`)
+        .call(xAxis);
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(${margin.left}, 0)`)
+        .call(yAxis);
+
+      const line = d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d.total))
+        .curve(d3.curveMonotoneX);
+
+      svg.append("path")
+        .datum(series)
+        .attr("class", "line-path")
+        .attr("d", line);
+
+      svg.selectAll(".dot")
+        .data(series)
+        .enter()
+        .append("circle")
+        .attr("class", "dot")
+        .attr("r", 3)
+        .attr("cx", d => x(d.year))
+        .attr("cy", d => y(d.total))
+        .on("mousemove", (event, d) => {
+          const html = `
+            <div><strong>Year ${d.year}</strong></div>
+            <div class="tooltip-row">
+              <span class="key">Total commitment:</span>
+              <span class="val">${d3.format(",.0f")(d.total)} USD</span>
+            </div>
+          `;
+          showTooltip(html, event);
+        })
+        .on("mouseleave", hideTooltip);
+    }
+
+    // === 3. MIRRORED TOP DONORS & RECIPIENTS ===
+    function renderDonorRecipientChart(data) {
+      const container = d3.select("#chart-donor-recipient");
+      container.selectAll("*").remove();
+
+      const margin = { top: 24, right: 80, bottom: 32, left: 80 };
+      const width = container.node().getBoundingClientRect().width || 360;
+      const height = 230;
+
+      const svg = container.append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      const donorsRollup = d3.rollup(
+        data.filter(d => d.donor && !isNaN(d.commitment_amount_usd_constant)),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.donor
+      );
+      let donors = Array.from(donorsRollup, ([key, total]) => ({ key, total }));
+      donors.sort((a, b) => d3.descending(a.total, b.total));
+      donors = donors.slice(0, 7);
+
+      const recipientsRollup = d3.rollup(
+        data.filter(d => d.recipient && !isNaN(d.commitment_amount_usd_constant)),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.recipient
+      );
+      let recipients = Array.from(recipientsRollup, ([key, total]) => ({ key, total }));
+      recipients.sort((a, b) => d3.descending(a.total, b.total));
+      recipients = recipients.slice(0, 7);
+
+      const maxVal = d3.max([...donors, ...recipients], d => d.total) || 0;
+
+      const x = d3.scaleLinear()
+        .domain([-maxVal, maxVal])
+        .range([margin.left, width - margin.right])
+        .nice();
+
+      const centerX = x(0);
+
+      const yDonor = d3.scaleBand()
+        .domain(donors.map(d => d.key))
+        .range([margin.top, height / 2 - 8])
+        .padding(0.2);
+
+      const yRecipient = d3.scaleBand()
+        .domain(recipients.map(d => d.key))
+        .range([height / 2 + 16, height - margin.bottom])
+        .padding(0.2);
+
+      const xAxis = d3.axisBottom(x)
+        .ticks(4)
+        .tickFormat(v => d3.format(".2s")(Math.abs(v)).replace("G", "B"));
+
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(0, ${height - margin.bottom})`)
+        .call(xAxis);
+
+      // Center line
+        svg.append("line")
+            .attr("x1", centerX)
+            .attr("x2", centerX)
+            .attr("y1", margin.top - 6)
+            .attr("y2", height - margin.bottom + 4)
+            .attr("stroke", "var(--border-soft)")
+            .attr("stroke-width", 1)
+            .attr("stroke-dasharray", "4,4");
+
+      // Section labels
+      svg.append("text")
+        .attr("x", centerX - 8)
+        .attr("y", margin.top - 8)
+        .attr("text-anchor", "end")
+        .attr("fill", "#9ca3af")
+        .attr("font-size", 11)
+        .text("Top donors");
+
+      svg.append("text")
+        .attr("x", centerX + 8)
+        .attr("y", height / 2 + 8)
+        .attr("text-anchor", "start")
+        .attr("fill", "#9ca3af")
+        .attr("font-size", 11)
+        .text("Top recipients");
+
+      const labelXDonor = x(-maxVal) - 4;
+      const labelXRecipient = x(maxVal) + 4;
+
+      // Donor bars (left)
+      svg.selectAll(".bar-donor")
+        .data(donors)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(-d.total))
+        .attr("y", d => yDonor(d.key))
+        .attr("width", d => centerX - x(-d.total))
+        .attr("height", yDonor.bandwidth())
+        .on("mousemove", (event, d) => {
+          const html = `
+            <div><strong>${d.key} (donor)</strong></div>
+            <div class="tooltip-row">
+              <span class="key">Total commitments:</span>
+              <span class="val">${d3.format(",.0f")(d.total)} USD</span>
+            </div>
+          `;
+          showTooltip(html, event);
+        })
+        .on("mouseleave", hideTooltip);
+
+      svg.selectAll(".label-donor")
+        .data(donors)
+        .enter()
+        .append("text")
+        .attr("x", labelXDonor)
+        .attr("y", d => yDonor(d.key) + yDonor.bandwidth() / 2 + 3)
+        .attr("text-anchor", "end")
+        .attr("fill", "#9ca3af")
+        .attr("font-size", 10)
+        .text(d => d.key);
+
+      // Recipient bars (right)
+      svg.selectAll(".bar-recipient")
+        .data(recipients)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", centerX)
+        .attr("y", d => yRecipient(d.key))
+        .attr("width", d => x(d.total) - centerX)
+        .attr("height", yRecipient.bandwidth())
+        .on("mousemove", (event, d) => {
+          const html = `
+            <div><strong>${d.key} (recipient)</strong></div>
+            <div class="tooltip-row">
+              <span class="key">Total commitments:</span>
+              <span class="val">${d3.format(",.0f")(d.total)} USD</span>
+            </div>
+          `;
+          showTooltip(html, event);
+        })
+        .on("mouseleave", hideTooltip);
+
+      svg.selectAll(".label-recipient")
+        .data(recipients)
+        .enter()
+        .append("text")
+        .attr("x", labelXRecipient)
+        .attr("y", d => yRecipient(d.key) + yRecipient.bandwidth() / 2 + 3)
+        .attr("text-anchor", "start")
+        .attr("fill", "#9ca3af")
+        .attr("font-size", 10)
+        .text(d => d.key);
+    }
+
+// === 4. TOP PURPOSES CHART ===
+function renderTopPurposes(data) {
+  const container = d3.select("#chart-purpose");
+  container.selectAll("*").remove();
+
+  const margin = { top: 12, right: 16, bottom: 30, left: 160 };
+  const width = container.node().getBoundingClientRect().width || 360;
+  const height = 220;
+
+  const svg = container.append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  const PURPOSE_FIELD = "coalesced_purpose_name";
+
+  const grouped = d3.rollup(
+    data.filter(d => d[PURPOSE_FIELD] && !isNaN(d.commitment_amount_usd_constant)),
+    v => d3.sum(v, d => d.commitment_amount_usd_constant),
+    d => d[PURPOSE_FIELD]
+  );
+
+  let rows = Array.from(grouped, ([key, total]) => ({ key, total }));
+  rows.sort((a, b) => d3.descending(a.total, b.total));
+  rows = rows.slice(0, 8);
+
+  const x = d3.scaleLinear()
+    .domain([0, d3.max(rows, d => d.total) || 0])
+    .nice()
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleBand()
+    .domain(rows.map(d => d.key))
+    .range([margin.top, height - margin.bottom])
+    .padding(0.18);
+
+  const xAxis = d3.axisBottom(x)
+    .ticks(4)
+    .tickFormat(d => d3.format(".2s")(d).replace("G", "B"));
+  const yAxis = d3.axisLeft(y);
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0, ${height - margin.bottom})`)
+    .call(xAxis);
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left}, 0)`)
+    .call(yAxis)
+    .selectAll("text")
+    .style("font-size", "9px");
+
+  svg.selectAll(".bar-purpose")
+    .data(rows)
+    .enter()
+    .append("rect")
+    .attr("class", "bar")
+    .attr("x", x(0))
+    .attr("y", d => y(d.key))
+    .attr("height", y.bandwidth())
+    .attr("width", d => x(d.total) - x(0))
+    .on("mousemove", (event, d) => {
+      const html = `
+        <div><strong>${d.key}</strong></div>
+        <div class="tooltip-row">
+          <span class="key">Total commitments:</span>
+          <span class="val">${d3.format(",.0f")(d.total)} USD</span>
+        </div>
+      `;
+      showTooltip(html, event);
+    })
+    .on("mouseleave", hideTooltip);
+}
+  </script>
+</body>
+</html>
