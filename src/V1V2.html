@@ -1,0 +1,1924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Donor vs Recipient Balance & Net Aid Map</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #f9fafb;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.4rem;
+    }
+
+    .chart-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .controls label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .slider-wrapper {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .search-wrapper {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      position: relative;
+      font-size: 0.85rem;
+    }
+    #countrySearch {
+      padding: 0.2rem 0.4rem;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      border: 1px solid #d1d5db;
+      min-width: 180px;
+    }
+    #countrySearch:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #bfdbfe;
+    }
+    #searchSuggestions {
+      position: absolute;
+      top: 120%;
+      left: 58px; /* roughly aligns under input after "Country:" */
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.35rem;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+      font-size: 0.85rem;
+      max-height: 220px;
+      overflow-y: auto;
+      display: none;
+      z-index: 20;
+      min-width: 180px;
+    }
+    #searchSuggestions div {
+      padding: 4px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #searchSuggestions div:hover {
+      background: #eff6ff;
+    }
+
+    /* Layout: top row = scatter + map, bottom row = drilldown panels */
+    .top-row {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 1rem;
+      align-items: stretch;
+    }
+    .bottom-row {
+      margin-top: 1.5rem;
+    }
+
+    #scatter-container,
+    #map-container {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      padding: 1rem;
+      overflow: visible;
+    }
+
+    #scatter-svg,
+    #map-svg {
+      width: 100%;
+      height: 500px;
+    }
+
+    /* Scatter styles */
+    .axis path,
+    .axis line {
+      stroke: #d1d5db;
+    }
+    .axis text {
+      fill: #4b5563;
+      font-size: 0.7rem;
+    }
+    .axis-label {
+      fill: #111827;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .dot {
+      stroke-width: 1px;
+      cursor: pointer;
+    }
+    .dot:hover {
+      opacity: 1;
+      stroke-width: 2px;
+    }
+    .dot.selected-dot {
+      stroke: #111827;
+      stroke-width: 3px;
+    }
+    .dot.dimmed {
+    opacity: 0.12;
+    }
+
+    
+    .scatter-highlight {
+      fill: none;
+      stroke: #111827;
+      stroke-width: 2.5px;
+      stroke-dasharray: 4 2;
+      pointer-events: none;
+    }
+
+    .map-highlight {
+      fill: none;
+      stroke: #111827;
+      stroke-width: 2.5px;
+      stroke-dasharray: 4 2;
+      pointer-events: none;
+    }
+
+    .ref-line {
+      stroke: #6b7280;
+      stroke-dasharray: 4 4;
+      stroke-width: 1.2px;
+    }
+    .legend {
+      font-size: 0.75rem;
+      fill: #4b5563;
+    }
+    .label {
+      font-size: 0.65rem;
+      fill: #111827;
+      paint-order: stroke;
+      stroke-width: 3px;
+      stroke: #ffffff;
+    }
+
+    /* Map styles */
+    .country {
+      stroke: #f3f4f6;
+      stroke-width: 0.6px;
+      cursor: pointer;
+    }
+    .country:hover {
+      stroke: #111827;
+      stroke-width: 1.2px;
+    }
+    .country.no-data {
+      fill: #e5e7eb;
+    }
+    .country.selected-country {
+      stroke: #111827;
+      stroke-width: 1px;
+    }
+    .country.dimmed {
+        opacity: 0.25;
+        }
+
+    .legend-title {
+      font-size: 0.8rem;
+      fill: #111827;
+      font-weight: 600;
+    }
+
+    /* Shared tooltip */
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: #ffffff;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+      border: 1px solid #e5e7eb;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      max-width: 260px;
+      z-index: 10;
+      line-height: 1.4;
+    }
+    .tooltip strong {
+      font-size: 0.9rem;
+    }
+
+    /* Drill-down layout (bar charts) */
+    #drilldown {
+      margin-top: 0.5rem;
+    }
+    #drilldown-title {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      color: #111827;
+    }
+    .drilldown-content {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .panel {
+      flex: 1 1 320px;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      padding: 0.75rem 1rem 1rem;
+    }
+    .panel h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.95rem;
+    }
+    .panel svg {
+      width: 100%;
+      height: 320px;
+    }
+    .no-data-text {
+      font-size: 0.8rem;
+      fill: #6b7280;
+    }
+
+    /* Neighbor contrast list */
+    #neighbor-pairs {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: #4b5563;
+    }
+    #neighbor-pairs h3 {
+      margin: 0 0 0.25rem 0;
+      font-size: 0.85rem;
+      color: #111827;
+    }
+    #neighbor-pairs ul {
+      list-style: none;
+      padding-left: 0;
+      margin: 0;
+    }
+    #neighbor-pairs li {
+      padding: 3px 0;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 0.35rem;
+    }
+    #neighbor-pairs li:hover {
+      color: #1d4ed8;
+    }
+    #neighbor-pairs .pair-score {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+    
+    /* Country report card – bolder "school report" look */
+    #country-report-card {
+      margin-bottom: 1rem;
+      padding: 1.1rem 1.4rem;
+      border-radius: 16px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
+    }
+
+    .report-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .report-card-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .report-card-subtitle {
+      margin: 0.25rem 0 0 0;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.25rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+    }
+    .badge-donor {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+    }
+    .badge-recipient {
+      background: #fee2e2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+
+    .report-card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem 1.5rem;
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      padding: 0.45rem 0.65rem;
+      border-radius: 10px;
+      background: #f9fafb;
+    }
+
+    .metric-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+    }
+
+    .metric-value {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    /* Stack metrics on narrower screens */
+    @media (max-width: 800px) {
+      .report-card-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="chart-container">
+    <h1>Donor vs. Recipient Balance & Net Aid Map</h1>
+    <p style="max-width:900px;font-size:0.9rem;color:#4b5563;margin:0 0 0.75rem;">
+      Left: country-level scatterplot of total aid
+      <strong>received</strong> (x-axis) vs <strong>donated</strong> (y-axis). Right: world
+      map shaded by <strong>net balance</strong> (donated − received, share of flow).
+      Above the line <em>y = x</em> → net donors; below → net recipients. Click a country
+      on either view to see its top partners below.
+    </p>
+
+    <div class="controls">
+      <div class="slider-wrapper">
+        <span>Year:</span>
+        <input id="yearSlider" type="range" min="2000" max="2025" step="1" value="2000" />
+        <span id="yearValue">2000</span>
+      </div>
+
+      <div class="slider-wrapper">
+        <span>Decade:</span>
+        <select id="decadeSelect">
+          <option value="">Single year</option>
+          <option value="1960-1969">1960s</option>
+          <option value="1970-1979">1970s</option>
+          <option value="1980-1989">1980s</option>
+          <option value="1990-1999">1990s</option>
+          <option value="2000-2009">2000s</option>
+          <option value="2010-2019">2010s</option>
+        </select>
+      </div>
+
+      <label>
+        <input type="checkbox" id="logScale" />
+        Use log scale (x &amp; y)
+      </label>
+
+      <label>
+        <input type="checkbox" id="overallMode" />
+        Overall view (all years)
+      </label>
+
+      <label>
+        <input type="checkbox" id="majorFlowsOnly" />
+        Show only major flows (top 50)
+    </label>
+
+      <div class="search-wrapper" id="countrySearchWrapper">
+        <span>Country:</span>
+        <input
+          id="countrySearch"
+          type="text"
+          placeholder="Type a country name..."
+          autocomplete="off"
+        />
+        <div id="searchSuggestions"></div>
+      </div>
+
+      <span style="font-size:0.8rem; color:#6b7280;">
+        Above line y = x → Net donors · Below → Net recipients
+      </span>
+    </div>
+
+    <!-- TOP ROW: scatter + map -->
+    <div class="top-row">
+      <div id="scatter-container">
+        <svg id="scatter-svg"></svg>
+      </div>
+
+      <div id="map-container">
+        <svg id="map-svg"></svg>
+        <!-- Neighbor contrast list -->
+        <div id="neighbor-pairs"></div>
+      </div>
+    </div>
+
+    <!-- BOTTOM: shared drilldown for both scatter + map -->
+    <div class="bottom-row">
+      <div id="drilldown">
+          <!-- Country report card -->
+        <div id="country-report-card" class="panel hidden">
+          <div class="report-card-header">
+            <div>
+              <h2 id="report-country-name">Select a country</h2>
+              <p id="report-period-label" class="report-card-subtitle">Period: —</p>
+            </div>
+            <span id="report-net-role" class="badge-pill">Net position</span>
+          </div>
+          <div class="report-card-grid">
+            <div class="metric">
+              <span class="metric-label">Total donated</span>
+              <span class="metric-value" id="report-total-donated">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Total received</span>
+              <span class="metric-value" id="report-total-received">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Net aid (donor − recipient)</span>
+              <span class="metric-value" id="report-net-aid">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Net balance share</span>
+              <span class="metric-value" id="report-net-share">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Total flow</span>
+              <span class="metric-value" id="report-total-flow">—</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Rank (by net balance share)</span>
+              <span class="metric-value" id="report-rank">—</span>
+            </div>
+            <div class="metric" style="grid-column: 1 / -1;">
+              <span class="metric-label">Largest partner flow</span>
+              <span class="metric-value" id="report-top-partner">—</span>
+            </div>
+          </div>
+        </div>
+        <h2 id="drilldown-title">
+          Country relationships (click a country on the scatterplot or map)
+        </h2> 
+        <div class="drilldown-content">
+          <div class="panel">
+            <h3 id="top-donors-title">Top donors (select a country)</h3>
+            <svg id="top-donors-svg"></svg>
+          </div>
+          <div class="panel">
+            <h3 id="top-recipients-title">Top recipients (select a country)</h3>
+            <svg id="top-recipients-svg"></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // Shared tooltip
+    const tooltip = d3.select("#tooltip");
+    const fmtShort = d => d3.format(".2s")(d).replace("G", "B");
+
+    // ============================================================
+    // 1) SCATTERPLOT (Vis1)
+    // ============================================================
+    const scatterSvg = d3.select("#scatter-svg");
+    const scatterWidth = 900;
+    const scatterHeight = 500;
+    const margin = { top: 40, right: 40, bottom: 60, left: 80 };
+    const innerWidth = scatterWidth - margin.left - margin.right;
+    const innerHeight = scatterHeight - margin.top - margin.bottom;
+
+    const MAJOR_FLOWS_TOP_N = 50;
+    const MAX_BARS = 25;
+
+    scatterSvg.attr("viewBox", `0 0 ${scatterWidth} ${scatterHeight}`);
+
+    const g = scatterSvg.append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const xAxisGroup = g.append("g")
+      .attr("class", "axis x-axis")
+      .attr("transform", `translate(0, ${innerHeight})`);
+    const yAxisGroup = g.append("g")
+      .attr("class", "axis y-axis");
+
+    g.append("text")
+      .attr("class", "axis-label")
+      .attr("x", innerWidth / 2)
+      .attr("y", innerHeight + 45)
+      .attr("text-anchor", "middle")
+      .text("Total Received (USD, constant)");
+
+    g.append("text")
+      .attr("class", "axis-label")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -innerHeight / 2)
+      .attr("y", -60)
+      .attr("text-anchor", "middle")
+      .text("Total Donated (USD, constant)");
+
+    const refLine = g.append("line").attr("class", "ref-line");
+    const pointsGroup = g.append("g").attr("class", "points");
+    const labelsGroup = g.append("g").attr("class", "labels");
+
+    // Highlight ring for selected country in scatter
+    const scatterHighlight = g.append("circle")
+      .attr("class", "scatter-highlight")
+      .attr("cx", 0)
+      .attr("cy", 0)
+      .attr("r", 0)
+      .style("opacity", 0);
+
+    const legendGroup = g.append("g")
+      .attr("class", "legend")
+      .attr("transform", `translate(${innerWidth - 210}, 0)`);
+
+    let xScale = d3.scaleLinear().range([0, innerWidth]);
+    let yScale = d3.scaleLinear().range([innerHeight, 0]);
+
+    let logMode = true;
+    let currentYear;
+    let years = [];
+    const yearCountryMap = new Map();
+    let overallData = [];
+    let overallPeriodLabel = "";
+
+    const yearSlider = document.getElementById("yearSlider");
+    const yearValue = document.getElementById("yearValue");
+    const logCheckbox = document.getElementById("logScale");
+    const overallCheckbox = document.getElementById("overallMode");
+    const majorFlowsCheckbox = document.getElementById("majorFlowsOnly");
+    const decadeSelect = document.getElementById("decadeSelect");
+    const countrySearch = document.getElementById("countrySearch");
+    const searchSuggestions = document.getElementById("searchSuggestions");
+    const searchWrapper = document.getElementById("countrySearchWrapper");
+    logCheckbox.checked = true;
+
+    let allCountryNames = [];
+
+    // Colorblind-safe diverging palette (recipient → donor)
+    const colorScale = d3.scaleDiverging()
+      .domain([-1, 0, 1])
+      .interpolator(d3.interpolateRgbBasis([
+        "#7c2d12",
+        "#fdba74",
+        "#e5e7eb",
+        "#93c5fd",
+        "#1d4ed8"
+      ]))
+      .clamp(true);
+
+    let overallMode = false;
+    let rawData = [];
+    let selectedCountry = null;
+    let currentDecadeRange = null; // {start, end}
+
+    const drilldownTitle = document.getElementById("drilldown-title");
+    const topDonorsTitle = document.getElementById("top-donors-title");
+    const topRecipientsTitle = document.getElementById("top-recipients-title");
+    
+    // Country report card elements
+    const reportCardEl = document.getElementById("country-report-card");
+    const reportCountryName = document.getElementById("report-country-name");
+    const reportPeriodLabel = document.getElementById("report-period-label");
+    const reportNetRole = document.getElementById("report-net-role");
+    const reportDonated = document.getElementById("report-total-donated");
+    const reportReceived = document.getElementById("report-total-received");
+    const reportNetAid = document.getElementById("report-net-aid");
+    const reportNetShare = document.getElementById("report-net-share");
+    const reportTotalFlow = document.getElementById("report-total-flow");
+    const reportRank = document.getElementById("report-rank");
+    const reportTopPartner = document.getElementById("report-top-partner");
+
+
+    const donorsSvg = d3.select("#top-donors-svg");
+    const recipientsSvg = d3.select("#top-recipients-svg");
+
+    const drillWidth = 430;
+    const drillHeight = 320;
+    const drillMargin = { top: 30, right: 20, bottom: 30, left: 120 };
+    const drillInnerWidth = drillWidth - drillMargin.left - drillMargin.right;
+    const drillInnerHeight = drillHeight - drillMargin.top - drillMargin.bottom;
+
+    donorsSvg.attr("viewBox", `0 0 ${drillWidth} ${drillHeight}`);
+    recipientsSvg.attr("viewBox", `0 0 ${drillWidth} ${drillHeight}`);
+
+    const donorsG = donorsSvg.append("g")
+      .attr("transform", `translate(${drillMargin.left},${drillMargin.top})`);
+    const recipientsG = recipientsSvg.append("g")
+      .attr("transform", `translate(${drillMargin.left},${drillMargin.top})`);
+
+    const donorsXAxisG = donorsG.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${drillInnerHeight})`);
+    const donorsYAxisG = donorsG.append("g").attr("class", "axis");
+
+    const recipientsXAxisG = recipientsG.append("g")
+      .attr("class", "axis")
+      .attr("transform", `translate(0,${drillInnerHeight})`);
+    const recipientsYAxisG = recipientsG.append("g").attr("class", "axis");
+
+    // ============================================================
+    // 2) MAP (Vis2)
+    // ============================================================
+    const mapSvg = d3.select("#map-svg");
+    const mapWidth = 700;
+    const mapHeight = 500;
+    mapSvg.attr("viewBox", `0 0 ${mapWidth} ${mapHeight}`);
+
+    const mapG = mapSvg.append("g").attr("class", "map-layer");
+
+    // Highlight ring for selected country on the map
+    const mapHighlight = mapG.append("circle")
+      .attr("class", "map-highlight")
+      .attr("cx", 0)
+      .attr("cy", 0)
+      .attr("r", 0)
+      .style("opacity", 0);
+
+    const mapLegendG = mapSvg.append("g")
+      .attr("class", "legend")
+      .attr("transform", `translate(40, 20)`);
+
+    const projection = d3.geoNaturalEarth1();
+    const path = d3.geoPath(projection);
+
+    let countrySummaryCurrent = new Map();
+    let countrySummaryFullCurrent = new Map();
+    let countriesGeo = null;
+
+    let featureByNormName = new Map();
+    let neighborMap = new Map();
+    let interestingPairsCurrent = [];
+    const neighborPairsContainer = d3.select("#neighbor-pairs");
+    let zoomBehavior;
+
+    function normalizeName(name) {
+      return String(name || "")
+        .toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/'/g, "")
+        .replace(/\./g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    const nameAliases = {
+      "usa": "united states",
+      "democratic republic of the congo": "congo, democratic republic of",
+      "republic of the congo": "congo, republic of",
+      "cote d`ivoire": "ivory coast",
+      "england": "united kingdom",
+      "south korea": "korea",
+      "vietnam": "viet nam",
+      "united republic of tanzania": "tanzania",
+      "slovak republic": "slovakia",
+      "macedonia, fyr": "macedonia",
+      "bosnia-herzegovina": "bosnia and herzegovina",
+      "serbia": "republic of serbia",
+      "guinea-bissau": "guinea bissau",
+      "kyrgyz republic": "kyrgyzstan"
+    };
+
+    // ============================================================
+    // 3) LOAD DATA
+    // ============================================================
+    Promise.all([
+      d3.csv("/../data/updated_aiddata.csv", d3.autoType),
+      d3.json("/../data/world.geojson")
+    ]).then(([csv, worldGeo]) => {
+      rawData = csv;
+
+      // Build list of all country names in donors/recipients
+      const countrySet = new Set();
+      csv.forEach(d => {
+        if (d.donor) countrySet.add(d.donor);
+        if (d.recipient) countrySet.add(d.recipient);
+      });
+      allCountryNames = Array.from(countrySet).sort(d3.ascending);
+
+      // Years and overall label
+      years = Array.from(new Set(csv.map(d => d.year))).sort(d3.ascending);
+      overallPeriodLabel = `${years[0]}–${years[years.length - 1]}`;
+
+      // Precompute yearCountryMap and overallData (not strictly needed now)
+      years.forEach(year => {
+        const subset = csv.filter(d => d.year === year);
+
+        const donatedByCountry = d3.rollup(
+          subset,
+          v => d3.sum(v, d => d.commitment_amount_usd_constant),
+          d => d.donor
+        );
+
+        const receivedByCountry = d3.rollup(
+          subset,
+          v => d3.sum(v, d => d.commitment_amount_usd_constant),
+          d => d.recipient
+        );
+
+        const countries = new Set([
+          ...donatedByCountry.keys(),
+          ...receivedByCountry.keys()
+        ]);
+
+        const arr = [];
+        for (const c of countries) {
+          const donated = donatedByCountry.get(c) || 0;
+          const received = receivedByCountry.get(c) || 0;
+          arr.push({
+            country: c,
+            year: year,
+            period: String(year),
+            total_donated: donated,
+            total_received: received,
+            total_flow: donated + received
+          });
+        }
+        yearCountryMap.set(year, arr);
+      });
+
+      const donatedOverall = d3.rollup(
+        csv,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.donor
+      );
+      const receivedOverall = d3.rollup(
+        csv,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant),
+        d => d.recipient
+      );
+      const allCountriesOverall = new Set([
+        ...donatedOverall.keys(),
+        ...receivedOverall.keys()
+      ]);
+      overallData = [];
+      allCountriesOverall.forEach(c => {
+        const donated = donatedOverall.get(c) || 0;
+        const received = receivedOverall.get(c) || 0;
+        overallData.push({
+          country: c,
+          year: null,
+          period: overallPeriodLabel,
+          total_donated: donated,
+          total_received: received,
+          total_flow: donated + received
+        });
+      });
+
+      // Slider bounds
+      yearSlider.min = d3.min(years);
+      yearSlider.max = d3.max(years);
+      currentYear = years[0];
+      yearSlider.value = currentYear;
+      yearValue.textContent = currentYear;
+
+      drawScatterLegend();
+      updateScatter();
+
+      // Map geometry
+      countriesGeo = worldGeo;
+      projection.fitSize([mapWidth, mapHeight], countriesGeo);
+
+      mapG.selectAll("path.country")
+        .data(countriesGeo.features)
+        .join("path")
+        .attr("class", "country")
+        .attr("d", path)
+        .each(function (d) {
+          const props = d.properties || {};
+          const rawName = props.name || props.ADMIN || props.admin || d.id;
+          d._displayName = rawName || "Unknown";
+          let normGeo = normalizeName(rawName);
+          if (nameAliases[normGeo]) normGeo = nameAliases[normGeo];
+          d._normName = normGeo;
+          featureByNormName.set(normGeo, d);
+        })
+        .on("mouseenter", (event, d) => {
+          const stats = countrySummaryCurrent.get(d._normName);
+          showMapTooltip(event, d._displayName, stats);
+        })
+        .on("mousemove", (event) => moveTooltip(event))
+        .on("mouseleave", hideTooltip)
+        .on("click", (event, d) => {
+          const stats = countrySummaryCurrent.get(d._normName);
+          if (!stats) return;
+          selectedCountry = stats.country;
+          updateDrilldown(selectedCountry);
+          highlightSelectedCountry();
+          computeInterestingPairs();
+            renderNeighborPairs();
+        });
+
+      buildNeighborAdjacency();
+      updateMap();
+
+      zoomBehavior = d3.zoom()
+        .scaleExtent([1, 8])
+        .on("zoom", (event) => {
+          mapG.attr("transform", event.transform);
+        });
+      mapSvg.call(zoomBehavior);
+
+      // Interactions
+      yearSlider.addEventListener("input", () => {
+        currentYear = +yearSlider.value;
+        overallMode = false;
+        overallCheckbox.checked = false;
+        currentDecadeRange = null;
+        decadeSelect.value = "";
+        yearSlider.disabled = false;
+        decadeSelect.disabled = false;
+        yearValue.textContent = getCurrentPeriodLabel();
+
+        updateScatter();
+        updateMap();
+        if (selectedCountry) updateDrilldown(selectedCountry);
+        highlightSelectedCountry();
+      });
+
+      logCheckbox.addEventListener("change", () => {
+        logMode = logCheckbox.checked;
+        updateScatter();
+        if (selectedCountry) updateDrilldown(selectedCountry);
+        highlightSelectedCountry();
+      });
+
+      overallCheckbox.addEventListener("change", () => {
+        overallMode = overallCheckbox.checked;
+        if (overallMode) {
+          currentDecadeRange = null;
+          decadeSelect.value = "";
+        }
+        yearSlider.disabled = overallMode || !!currentDecadeRange;
+        decadeSelect.disabled = overallMode;
+        yearValue.textContent = getCurrentPeriodLabel();
+
+        updateScatter();
+        updateMap();
+        if (selectedCountry) updateDrilldown(selectedCountry);
+        highlightSelectedCountry();
+      });
+
+      majorFlowsCheckbox.addEventListener("change", () => {
+        updateScatter();
+        updateMap();  
+        highlightSelectedCountry();
+      });
+
+      decadeSelect.addEventListener("change", () => {
+        const val = decadeSelect.value;
+        if (!val) {
+          currentDecadeRange = null;
+          yearSlider.disabled = overallMode;
+          decadeSelect.disabled = false;
+        } else {
+          const [startStr, endStr] = val.split("-");
+          currentDecadeRange = {
+            start: +startStr,
+            end: +endStr
+          };
+          overallMode = false;
+          overallCheckbox.checked = false;
+          yearSlider.disabled = true;
+        }
+        yearValue.textContent = getCurrentPeriodLabel();
+
+        updateScatter();
+        updateMap();
+        if (selectedCountry) updateDrilldown(selectedCountry);
+        highlightSelectedCountry();
+      });
+    }).catch(err => console.error("Error loading data:", err));
+
+    // ---------------- Country search / autocomplete ----------------
+    function renderSearchSuggestions() {
+      const query = countrySearch.value.trim().toLowerCase();
+      if (!query) {
+        searchSuggestions.style.display = "none";
+        searchSuggestions.innerHTML = "";
+        return;
+      }
+
+      const matches = allCountryNames
+        .filter(name => name.toLowerCase().includes(query))
+        .slice(0, 8);
+
+      searchSuggestions.innerHTML = "";
+      if (!matches.length) {
+        searchSuggestions.style.display = "none";
+        return;
+      }
+
+      matches.forEach(name => {
+        const div = document.createElement("div");
+        div.textContent = name;
+        div.addEventListener("click", () => {
+          selectCountryFromSearch(name);
+        });
+        searchSuggestions.appendChild(div);
+      });
+
+      searchSuggestions.style.display = "block";
+    }
+
+    function selectCountryFromSearch(name) {
+      selectedCountry = name;
+      countrySearch.value = name;
+      searchSuggestions.style.display = "none";
+      updateDrilldown(selectedCountry);
+      highlightSelectedCountry(false);
+    }
+
+    countrySearch.addEventListener("input", () => {
+      renderSearchSuggestions();
+    });
+
+    countrySearch.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const text = countrySearch.value.trim();
+        if (!text) return;
+        let exact = allCountryNames.find(
+          name => name.toLowerCase() === text.toLowerCase()
+        );
+        if (!exact) {
+          const matches = allCountryNames.filter(name =>
+            name.toLowerCase().includes(text.toLowerCase())
+          );
+          if (!matches.length) return;
+          exact = matches[0];
+        }
+        selectCountryFromSearch(exact);
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!searchWrapper.contains(event.target)) {
+        searchSuggestions.style.display = "none";
+      }
+    });
+
+    // ---------------- Time helpers ----------------
+    function getCurrentBaseSubset() {
+      if (!rawData || !rawData.length) return [];
+      if (overallMode) return rawData;
+      if (currentDecadeRange) {
+        const { start, end } = currentDecadeRange;
+        return rawData.filter(d => d.year >= start && d.year <= end);
+      }
+      return rawData.filter(d => d.year === currentYear);
+    }
+
+    function getCurrentPeriodLabel() {
+      if (overallMode) return overallPeriodLabel;
+      if (currentDecadeRange) return `${currentDecadeRange.start}–${currentDecadeRange.end}`;
+      return String(currentYear);
+    }
+
+    function getCurrentData() {
+      const base = getCurrentBaseSubset();
+      const periodLabel = getCurrentPeriodLabel();
+
+      const donatedByCountry = d3.rollup(
+        base,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.donor
+      );
+      const receivedByCountry = d3.rollup(
+        base,
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.recipient
+      );
+
+      const countries = new Set([
+        ...donatedByCountry.keys(),
+        ...receivedByCountry.keys()
+      ]);
+
+      const arr = [];
+      for (const c of countries) {
+        const donated = donatedByCountry.get(c) || 0;
+        const received = receivedByCountry.get(c) || 0;
+        arr.push({
+          country: c,
+          year: null,
+          period: periodLabel,
+          total_donated: donated,
+          total_received: received,
+          total_flow: donated + received
+        });
+      }
+      return arr;
+    }
+
+    // ---------------- Scatter helpers ----------------
+    function updateScatter() {
+      let data = getCurrentData();
+
+      data.forEach(d => {
+        const donated = d.total_donated || 0;
+        const received = d.total_received || 0;
+        const denom = donated + received;
+        let balance = 0;
+        if (denom > 0) balance = (donated - received) / denom;
+        d._balance = balance;
+      });
+
+      if (majorFlowsCheckbox.checked) {
+        data = data
+          .slice()
+          .sort((a, b) => d3.descending(a.total_flow, b.total_flow))
+          .slice(0, MAJOR_FLOWS_TOP_N);
+      }
+
+      const flowExtent = d3.extent(data, d => d.total_flow);
+      const rScale = d3.scaleSqrt()
+        .domain(flowExtent)
+        .range([2, 14]);
+
+      const opacityScale = d3.scaleSqrt()
+        .domain(flowExtent)
+        .range([0.25, 0.95]);
+
+      const values = data.flatMap(d => [d.total_received, d.total_donated]);
+      const maxVal = d3.max(values) || 1;
+
+      if (logMode) {
+        const MIN_AXIS = 10000;
+        const transformed = data.flatMap(d => [
+          Math.max(MIN_AXIS, d.total_received),
+          Math.max(MIN_AXIS, d.total_donated)
+        ]);
+        const maxLog = d3.max(transformed) || MIN_AXIS * 10;
+
+        xScale = d3.scaleLog()
+          .domain([MIN_AXIS, maxLog])
+          .range([0, innerWidth])
+          .nice();
+        yScale = d3.scaleLog()
+          .domain([MIN_AXIS, maxLog])
+          .range([innerHeight, 0])
+          .nice();
+      } else {
+        const padding = maxVal * 0.05;
+        xScale = d3.scaleLinear()
+          .domain([0, maxVal + padding])
+          .range([0, innerWidth])
+          .nice();
+        yScale = d3.scaleLinear()
+          .domain([0, maxVal + padding])
+          .range([innerHeight, 0])
+          .nice();
+      }
+
+      const xAxis = d3.axisBottom(xScale).ticks(6).tickFormat(fmtShort);
+      const yAxis = d3.axisLeft(yScale).ticks(6).tickFormat(fmtShort);
+
+      xAxisGroup.transition().duration(600).call(xAxis);
+      yAxisGroup.transition().duration(600).call(yAxis);
+
+      drawRefLine();
+
+      const circles = pointsGroup.selectAll("circle")
+        .data(data, d => d.country);
+
+      circles.exit()
+        .transition().duration(300)
+        .attr("r", 0)
+        .remove();
+
+      const circlesEnter = circles.enter().append("circle")
+        .attr("r", 0)
+        .attr("class", "dot");
+
+      const circlesMerged = circlesEnter.merge(circles)
+        .on("mouseenter", (event, d) => showScatterTooltip(event, d))
+        .on("mousemove", (event, d) => moveTooltip(event))
+        .on("mouseleave", hideTooltip)
+        .on("click", (event, d) => {
+          selectedCountry = d.country;
+          updateDrilldown(d.country);
+          highlightSelectedCountry();
+          computeInterestingPairs();
+        renderNeighborPairs();
+        });
+
+      circlesMerged
+        .transition()
+        .duration(600)
+        .attr("cx", d => xScale(safeVal(d.total_received)))
+        .attr("cy", d => yScale(safeVal(d.total_donated)))
+        .attr("r", d => rScale(d.total_flow))
+        .attr("fill", d => colorScale(d._balance))
+        .attr("fill-opacity", d => opacityScale(d.total_flow))
+        .attr("stroke", d => d._balance >= 0 ? "#0f172a" : "#4b5563")
+        .attr("stroke-width", d => d._balance >= 0 ? 1.5 : 0.8);
+
+      const flowsSorted = data
+        .map(d => d.total_flow)
+        .sort(d3.ascending);
+      const highFlowThreshold = flowsSorted.length
+        ? d3.quantile(flowsSorted, 0.6)
+        : 0;
+
+      const withImbalance = data
+        .filter(d => d.total_flow >= highFlowThreshold)
+        .map(d => ({
+          ...d,
+          imbalance: Math.abs(d.total_donated - d.total_received)
+        }))
+        .sort((a, b) => d3.descending(a.imbalance, b.imbalance))
+        .slice(0, 10);
+
+      const labels = labelsGroup.selectAll("text")
+        .data(withImbalance, d => d.country);
+
+      labels.exit().remove();
+
+      const labelsEnter = labels.enter().append("text")
+        .attr("class", "label")
+        .attr("text-anchor", "start");
+
+      labelsEnter.merge(labels)
+        .attr("x", d => xScale(safeVal(d.total_received)) + 7)
+        .attr("y", d => yScale(safeVal(d.total_donated)) - 7)
+        .text(d => d.country);
+
+      highlightSelectedCountry();
+    }
+    function zoomToCountry(normName) {
+        const f = featureByNormName.get(normName);
+        if (!f || !zoomBehavior) return;
+
+        const b = path.bounds(f);
+        const dx = b[1][0] - b[0][0];
+        const dy = b[1][1] - b[0][1];
+        const padding = 80;
+
+        const scale = Math.min(
+            mapWidth / (dx + padding),
+            mapHeight / (dy + padding)
+        );
+
+        const translate = [
+            mapWidth / 2 - scale * (b[0][0] + b[1][0]) / 2,
+            mapHeight / 2 - scale * (b[0][1] + b[1][1]) / 2
+        ];
+
+        const t = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
+        mapSvg.transition().duration(800).call(zoomBehavior.transform, t);
+    }
+
+    function highlightSelectedCountry(showRings) {
+      const sel = selectedCountry;
+
+      // 1) Class-based highlighting (existing behavior)
+      pointsGroup.selectAll("circle.dot")
+        .classed("selected-dot", d => sel && d.country === sel);
+
+      const paths = mapG.selectAll("path.country");
+      if (!sel) {
+        paths.classed("selected-country", false);
+        // Hide highlight rings if nothing is selected
+        scatterHighlight.style("opacity", 0);
+        mapHighlight.style("opacity", 0);
+        return;
+      }
+
+      let selNorm = normalizeName(sel);
+      if (nameAliases[selNorm]) selNorm = nameAliases[selNorm];
+
+      paths.classed("selected-country", d => d._normName === selNorm);
+
+      // 2) Scatter highlight ring (circle around the dot)
+      const currentData = getCurrentData();
+      const selectedDatum = currentData.find(d => d.country === sel);
+
+      if (showRings && selectedDatum) {
+        const sx = xScale(safeVal(selectedDatum.total_received));
+        const sy = yScale(safeVal(selectedDatum.total_donated));
+
+        scatterHighlight
+          .attr("cx", sx)
+          .attr("cy", sy)
+          .attr("r", 18)        // tweak radius if you want bigger/smaller ring
+          .style("opacity", 1);
+      } else {
+        scatterHighlight.style("opacity", 0);
+      }
+
+      // 3) Map highlight ring (circle around country's centroid)
+      let feat = featureByNormName.get(selNorm);
+      if (showRings && feat) {
+        const [mx, my] = path.centroid(feat);
+        mapHighlight
+          .attr("cx", mx)
+          .attr("cy", my)
+          .attr("r", 12)       // tweak radius as desired
+          .style("opacity", 1);
+      } else {
+        mapHighlight.style("opacity", 0);
+      }
+      zoomToCountry(selNorm);
+      renderNeighborPairs();
+    }
+
+
+    function safeVal(v) {
+      const MIN_AXIS = 10000;
+      return logMode ? Math.max(MIN_AXIS, v) : v;
+    }
+
+    function drawRefLine() {
+      const domainMin = Math.min(xScale.domain()[0], yScale.domain()[0]);
+      const domainMax = Math.max(xScale.domain()[1], yScale.domain()[1]);
+
+      refLine
+        .attr("x1", xScale(domainMin))
+        .attr("y1", yScale(domainMin))
+        .attr("x2", xScale(domainMax))
+        .attr("y2", yScale(domainMax));
+    }
+
+    function drawScatterLegend() {
+      const items = [
+        { label: "Net Donor (Donated > Received)", value: 1 },
+        { label: "Net Recipient (Received > Donated)", value: -1 }
+      ];
+
+      const legItem = legendGroup.selectAll("g.legend-item")
+        .data(items)
+        .enter()
+        .append("g")
+        .attr("class", "legend-item")
+        .attr("transform", (_, i) => `translate(0, ${i * 20})`);
+
+      legItem.append("circle")
+        .attr("r", 5)
+        .attr("cx", 0)
+        .attr("cy", 0)
+        .attr("fill", d => colorScale(d.value))
+        .attr("stroke", d => d3.color(colorScale(d.value)).darker(0.9));
+
+      legItem.append("text")
+        .attr("x", 10)
+        .attr("y", 4)
+        .text(d => d.label);
+    }
+
+    function showScatterTooltip(event, d) {
+      const net = d.total_donated - d.total_received;
+      const netLabel = net >= 0 ? "Net Donor" : "Net Recipient";
+      const fmt = d3.format(",.2f");
+
+      tooltip
+        .style("opacity", 1)
+        .html(`
+          <strong>${d.country}</strong><br/>
+          Period: ${d.period}<br/>
+          Received: ${fmt(d.total_received)}<br/>
+          Donated: ${fmt(d.total_donated)}<br/>
+          Total flow: ${fmt(d.total_flow)}<br/>
+          Net balance: ${fmt(net)} (${netLabel})
+        `);
+
+      moveTooltip(event);
+    }
+
+    function moveTooltip(event) {
+      const [x, y] = d3.pointer(event, document.body);
+      tooltip
+        .style("left", (x + 15) + "px")
+        .style("top", (y + 15) + "px");
+    }
+
+    function hideTooltip() {
+      tooltip.style("opacity", 0);
+    }
+
+    // ---------------- Drilldown (bar charts) ----------------
+    function updateDrilldown(country) {
+      if (!country) return;
+
+      const period = getCurrentPeriodLabel();
+      const baseSubset = getCurrentBaseSubset();
+
+      drilldownTitle.textContent =
+        `Country relationships for ${country} in ${period} (click another country to change)`;
+      topDonorsTitle.textContent = `Top donors to ${country} in ${period}`;
+      topRecipientsTitle.textContent = `Top recipients from ${country} in ${period}`;
+
+      const donorsMap = d3.rollup(
+        baseSubset.filter(d => d.recipient === country),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.donor
+      );
+      let donorsArr = Array.from(donorsMap, ([partner, value]) => ({ partner, value }))
+        .sort((a, b) => d3.descending(a.value, b.value));
+
+      const donorsTop = donorsArr.slice(0, MAX_BARS);
+      const donorsRest = donorsArr.slice(MAX_BARS);
+      const donorsOther = d3.sum(donorsRest, d => d.value);
+      if (donorsOther > 0) {
+        donorsTop.push({ partner: "Other partners", value: donorsOther });
+      }
+
+      const recipientsMap = d3.rollup(
+        baseSubset.filter(d => d.donor === country),
+        v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+        d => d.recipient
+      );
+      let recipientsArr = Array.from(recipientsMap, ([partner, value]) => ({ partner, value }))
+        .sort((a, b) => d3.descending(a.value, b.value));
+
+      const recipientsTop = recipientsArr.slice(0, MAX_BARS);
+      const recipientsRest = recipientsArr.slice(MAX_BARS);
+      const recipientsOther = d3.sum(recipientsRest, d => d.value);
+      if (recipientsOther > 0) {
+        recipientsTop.push({ partner: "Other partners", value: recipientsOther });
+      }
+      updateCountryReportCard(country, period, donorsTop, recipientsTop);
+
+      drawDrilldownChart(donorsG, donorsXAxisG, donorsYAxisG, donorsTop,
+        { mode: "to", country, period });
+      drawDrilldownChart(recipientsG, recipientsXAxisG, recipientsYAxisG, recipientsTop,
+        { mode: "from", country, period });
+    }
+
+    function showBarTooltip(event, d, config) {
+      const fmt = d3.format(",.2f");
+      const title = config.mode === "to"
+        ? `${d.partner} → ${config.country}`
+        : `${config.country} → ${d.partner}`;
+      tooltip
+        .style("opacity", 1)
+        .html(`
+          <strong>${title}</strong><br/>
+          Period: ${config.period}<br/>
+          Total: ${fmt(d.value)} USD (constant)
+        `);
+      moveTooltip(event);
+    }
+
+    function drawDrilldownChart(group, xAxisG, yAxisG, data, config) {
+      group.selectAll(".no-data-text").remove();
+
+      if (!data.length) {
+        group.selectAll("rect").remove();
+        xAxisG.selectAll("*").remove();
+        yAxisG.selectAll("*").remove();
+
+        group.append("text")
+          .attr("class", "no-data-text")
+          .attr("x", drillInnerWidth / 2)
+          .attr("y", drillInnerHeight / 2)
+          .attr("text-anchor", "middle")
+          .text(`No data for ${config.country} in ${config.period}`);
+        return;
+      }
+
+      const x = d3.scaleLinear()
+        .domain([0, d3.max(data, d => d.value)])
+        .range([0, drillInnerWidth])
+        .nice();
+
+      const y = d3.scaleBand()
+        .domain(data.map(d => d.partner))
+        .range([0, drillInnerHeight])
+        .padding(0.2);
+
+      const xAxis = d3.axisBottom(x).ticks(4).tickFormat(fmtShort);
+      const yAxis = d3.axisLeft(y);
+
+      xAxisG.transition().duration(500).call(xAxis);
+      yAxisG.transition().duration(500).call(yAxis);
+
+      const bars = group.selectAll("rect").data(data, d => d.partner);
+
+      bars.exit().remove();
+
+      const barsEnter = bars.enter().append("rect")
+        .attr("x", 0)
+        .attr("height", y.bandwidth())
+        .attr("y", d => y(d.partner))
+        .attr("fill", "#3b82f6");
+
+      const MIN_BAR_WIDTH = 5;
+
+      barsEnter.merge(bars)
+        .on("mouseenter", (event, d) => showBarTooltip(event, d, config))
+        .on("mousemove", (event) => moveTooltip(event))
+        .on("mouseleave", hideTooltip)
+        .transition()
+        .duration(500)
+        .attr("y", d => y(d.partner))
+        .attr("width", d => {
+          const w = x(d.value);
+          if (!isFinite(w) || d.value <= 0) return 0;
+          return Math.max(w, MIN_BAR_WIDTH);
+        })
+        .attr("height", y.bandwidth());
+    }
+
+     // ---------------- Country report card ----------------
+    function updateCountryReportCard(country, period, donorsTop, recipientsTop) {
+      if (!country) {
+        reportCardEl.classList.add("hidden");
+        return;
+      }
+
+      const baseSubset = getCurrentBaseSubset();
+      if (!baseSubset.length) {
+        reportCardEl.classList.add("hidden");
+        return;
+      }
+
+      // Aggregate totals for this country in the current period
+      const donated = d3.sum(
+        baseSubset,
+        d => d.donor === country ? (d.commitment_amount_usd_constant || 0) : 0
+      );
+      const received = d3.sum(
+        baseSubset,
+        d => d.recipient === country ? (d.commitment_amount_usd_constant || 0) : 0
+      );
+      const net = donated - received;
+      const totalFlow = donated + received;
+
+      if (totalFlow <= 0) {
+        reportCardEl.classList.add("hidden");
+        return;
+      }
+
+      const balanceShare = net / totalFlow;
+
+      // Rank by net balance share (donor − recipient as a share of total flow)
+      const summary = getCurrentData();
+      summary.forEach(s => {
+        const t = (s.total_donated || 0) + (s.total_received || 0);
+        const n = (s.total_donated || 0) - (s.total_received || 0);
+        s._balanceShare = t > 0 ? n / t : 0;
+      });
+      const ranked = summary
+        .filter(s => (s.total_donated || 0) + (s.total_received || 0) > 0)
+        .sort((a, b) => d3.descending(a._balanceShare, b._balanceShare));
+      const idx = ranked.findIndex(s => s.country === country);
+
+      let rankText = "—";
+      if (idx >= 0) {
+        rankText = `${idx + 1} of ${ranked.length} (1 = strongest net donor)`;
+      }
+
+      // Largest partner flow (from donorsTop/recipientsTop)
+      let topPartnerText = "No major partners in this period";
+      let bestVal = -Infinity;
+
+      if (Array.isArray(donorsTop)) {
+        donorsTop.forEach(d => {
+          if (d.partner === "Other partners") return;
+          if (d.value > bestVal) {
+            bestVal = d.value;
+            topPartnerText = `${d.partner} (aid received from)`;
+          }
+        });
+      }
+      if (Array.isArray(recipientsTop)) {
+        recipientsTop.forEach(d => {
+          if (d.partner === "Other partners") return;
+          if (d.value > bestVal) {
+            bestVal = d.value;
+            topPartnerText = `${d.partner} (aid donated to)`;
+          }
+        });
+      }
+
+      const fmtPct = d3.format("+.1%");
+
+      // Use the same short format as elsewhere for large values
+      const fmtVal = fmtShort;
+
+      reportCountryName.textContent = country;
+      reportPeriodLabel.textContent = `Period: ${period}`;
+
+      reportNetRole.textContent = net >= 0 ? "Net donor" : "Net recipient";
+      reportNetRole.classList.remove("badge-donor", "badge-recipient");
+      reportNetRole.classList.add(net >= 0 ? "badge-donor" : "badge-recipient");
+
+      reportDonated.textContent = fmtVal(donated);
+      reportReceived.textContent = fmtVal(received);
+      reportNetAid.textContent = `${fmtVal(net)} (${net >= 0 ? "donor" : "recipient"})`;
+      reportNetShare.textContent = fmtPct(balanceShare);
+      reportTotalFlow.textContent = fmtVal(totalFlow);
+      reportRank.textContent = rankText;
+      reportTopPartner.textContent = topPartnerText;
+
+      reportCardEl.classList.remove("hidden");
+    }
+
+    // ---------------- Map helpers ----------------
+function updateMap() {
+  if (!countriesGeo) return;
+
+  const baseSubset = getCurrentBaseSubset();
+
+  const donatedRollup = d3.rollup(
+    baseSubset,
+    v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+    d => d.donor
+  );
+  const receivedRollup = d3.rollup(
+    baseSubset,
+    v => d3.sum(v, d => d.commitment_amount_usd_constant || 0),
+    d => d.recipient
+  );
+
+  const allCountries = new Set([
+    ...donatedRollup.keys(),
+    ...receivedRollup.keys()
+  ]);
+
+  // 1) Build FULL summary (no filtering)
+  countrySummaryFullCurrent = new Map();
+
+  allCountries.forEach(c => {
+    const donated = donatedRollup.get(c) || 0;
+    const received = receivedRollup.get(c) || 0;
+    const net = donated - received;
+    const totalFlow = donated + received;
+
+    let balance = 0;
+    if (totalFlow > 0) {
+      balance = net / totalFlow;
+    }
+
+    let norm = normalizeName(c);
+    if (nameAliases[norm]) norm = nameAliases[norm];
+
+    countrySummaryFullCurrent.set(norm, {
+      country: c,
+      total_donated: donated,
+      total_received: received,
+      net_aid: net,
+      total_flow: totalFlow,
+      balance: balance
+    });
+  });
+
+  // 2) Start from FULL summary for the map, then optionally filter
+  countrySummaryCurrent = countrySummaryFullCurrent;
+
+  // If "major flows" is on, keep only top N countries by total_flow
+  if (majorFlowsCheckbox.checked) {
+    const topEntries = Array.from(countrySummaryFullCurrent.entries())
+      .sort((a, b) => d3.descending(a[1].total_flow, b[1].total_flow))
+      .slice(0, MAJOR_FLOWS_TOP_N);
+    countrySummaryCurrent = new Map(topEntries);
+  }
+
+  const mapColorScale = d3.scaleDiverging()
+    .domain([-1, 0, 1])
+    .interpolator(d3.interpolateRgbBasis([
+      "#7c2d12",
+      "#fdba74",
+      "#e5e7eb",
+      "#93c5fd",
+      "#1d4ed8"
+    ]));
+
+  const countryPaths = mapG.selectAll("path.country");
+
+  countryPaths
+    .classed("no-data", d => !countrySummaryCurrent.get(d._normName));
+
+  countryPaths
+    .transition()
+    .duration(600)
+    .attr("fill", d => {
+      const stats = countrySummaryCurrent.get(d._normName);
+      return stats ? mapColorScale(stats.balance) : "#e5e7eb";
+    });
+
+  highlightSelectedCountry();
+
+  mapLegendG.selectAll("*").remove();
+  drawMapLegend(mapColorScale);
+
+  // Neighbor contrasts now use FULL summary (including small neighbors)
+  computeInterestingPairs();
+  renderNeighborPairs();
+}
+
+
+    function drawMapLegend(colorScale) {
+      const legendWidth = 220;
+      const legendHeight = 10;
+      const gradientId = "net-balance-gradient";
+
+      const defs = mapSvg.append("defs");
+      const gradient = defs.append("linearGradient")
+        .attr("id", gradientId)
+        .attr("x1", "0%")
+        .attr("x2", "100%")
+        .attr("y1", "0%")
+        .attr("y2", "0%");
+
+      const stops = [
+        { offset: "0%",  value: -1 },
+        { offset: "50%", value: 0 },
+        { offset: "100%", value: 1 }
+      ];
+
+      stops.forEach(s => {
+        gradient.append("stop")
+          .attr("offset", s.offset)
+          .attr("stop-color", colorScale(s.value));
+      });
+
+      mapLegendG.append("text")
+        .attr("class", "legend-title")
+        .attr("x", 0)
+        .attr("y", 0)
+        .text("Net balance (donor − recipient, share of flow)");
+
+      mapLegendG.append("rect")
+        .attr("x", 0)
+        .attr("y", 8)
+        .attr("width", legendWidth)
+        .attr("height", legendHeight)
+        .attr("fill", `url(#${gradientId})`);
+
+      const scale = d3.scaleLinear()
+        .domain([-1, 1])
+        .range([0, legendWidth]);
+
+      const axis = d3.axisBottom(scale)
+        .ticks(5)
+        .tickFormat(d3.format(".0%"));
+
+      const axisG = mapLegendG.append("g")
+        .attr("transform", `translate(0, ${8 + legendHeight})`)
+        .call(axis);
+
+      axisG.select("path").attr("stroke", "#d1d5db");
+      axisG.selectAll("line").attr("stroke", "#d1d5db");
+      axisG.selectAll("text").attr("fill", "#4b5563").attr("font-size", 10);
+    }
+
+    // ---------------- Neighbor adjacency & pairs ----------------
+    function buildNeighborAdjacency() {
+      neighborMap = new Map();
+      if (!countriesGeo || !countriesGeo.features) return;
+
+      const features = countriesGeo.features;
+      const boundsList = features.map(f => ({
+        feature: f,
+        name: f._normName,
+        bounds: d3.geoBounds(f)
+      }));
+
+      const padding = 0.5;
+
+      function boxesTouchOrOverlap(a, b) {
+        const [[ax0, ay0], [ax1, ay1]] = a;
+        const [[bx0, by0], [bx1, by1]] = b;
+        const lonOverlap = ax0 <= bx1 + padding && ax1 >= bx0 - padding;
+        const latOverlap = ay0 <= by1 + padding && ay1 >= by0 - padding;
+        return lonOverlap && latOverlap;
+      }
+
+      for (let i = 0; i < boundsList.length; i++) {
+        const A = boundsList[i];
+        if (!A.name) continue;
+        for (let j = i + 1; j < boundsList.length; j++) {
+          const B = boundsList[j];
+          if (!B.name) continue;
+          if (boxesTouchOrOverlap(A.bounds, B.bounds)) {
+            if (!neighborMap.has(A.name)) neighborMap.set(A.name, new Set());
+            if (!neighborMap.has(B.name)) neighborMap.set(B.name, new Set());
+            neighborMap.get(A.name).add(B.name);
+            neighborMap.get(B.name).add(A.name);
+          }
+        }
+      }
+    }
+
+    function computeInterestingPairs() {
+  interestingPairsCurrent = [];
+  if (!neighborMap || !countrySummaryFullCurrent) return;
+
+  const summary = countrySummaryFullCurrent;
+  const seen = new Set();
+
+  function addPair(aNorm, bNorm) {
+    const key = aNorm < bNorm ? `${aNorm}|${bNorm}` : `${bNorm}|${aNorm}`;
+    if (seen.has(key)) return;
+
+    const aStats = summary.get(aNorm);
+    const bStats = summary.get(bNorm);
+    if (!aStats || !bStats) return;
+    if (!isFinite(aStats.balance) || !isFinite(bStats.balance)) return;
+    if (aStats.total_flow <= 0 || bStats.total_flow <= 0) return;
+
+    // We keep the "Net Donor ↔ Net Recipient" idea: opposite signs only
+    if (aStats.balance * bStats.balance >= 0) return;
+
+    const diff = Math.abs(aStats.balance - bStats.balance);
+
+    interestingPairsCurrent.push({
+      key,
+      aNorm,
+      bNorm,
+      aName: aStats.country,
+      bName: bStats.country,
+      aBalance: aStats.balance,
+      bBalance: bStats.balance,
+      diff
+    });
+    seen.add(key);
+  }
+
+  if (selectedCountry) {
+    // When a country is selected, ONLY show its neighbors (no strong global filter)
+    let selNorm = normalizeName(selectedCountry);
+    if (nameAliases[selNorm]) selNorm = nameAliases[selNorm];
+
+    const neighbors = neighborMap.get(selNorm);
+    if (!neighbors) return;
+
+    neighbors.forEach(nbNorm => addPair(selNorm, nbNorm));
+  } else {
+    // Global mode: top contrasts anywhere in the world
+    neighborMap.forEach((neighbors, aNorm) => {
+      neighbors.forEach(bNorm => addPair(aNorm, bNorm));
+    });
+  }
+
+  // Sort by contrast strength
+  interestingPairsCurrent.sort((x, y) => d3.descending(x.diff, y.diff));
+
+  // In global mode, still keep just the top few; for a selected country, show all its neighbors.
+  if (!selectedCountry) {
+    interestingPairsCurrent = interestingPairsCurrent.slice(0, 5);
+  }
+}
+
+
+       function renderNeighborPairs() {
+  neighborPairsContainer.selectAll("*").remove();
+
+  if (!interestingPairsCurrent.length) {
+    const msg = selectedCountry
+      ? `No strong neighbor contrasts for ${selectedCountry} in this period.`
+      : "No strong neighbor contrasts for this period.";
+    neighborPairsContainer.append("div").text(msg);
+    return;
+  }
+
+  const fmtPctShort = d3.format("+.0%");
+
+  const titleText = selectedCountry
+    ? `Neighbor contrasts for ${selectedCountry} (Net Donor ↔ Net Recipient)`
+    : "Notable neighbor contrasts (Net Donor ↔ Net Recipient)";
+
+  neighborPairsContainer.append("h3").text(titleText);
+
+  const ul = neighborPairsContainer.append("ul");
+
+  ul.selectAll("li")
+    .data(interestingPairsCurrent)
+    .enter()
+    .append("li")
+    .html(d => `
+      <span>${d.aName} ↔ ${d.bName}</span>
+      <span class="pair-score">
+        ${fmtPctShort(d.aBalance)} vs ${fmtPctShort(d.bBalance)}
+      </span>
+    `)
+    .on("click", (event, d) => {
+      zoomToPair(d.aNorm, d.bNorm);
+    });
+}
+
+
+
+    function zoomToPair(aNorm, bNorm) {
+      if (!zoomBehavior) return;
+
+      const fa = featureByNormName.get(aNorm);
+      const fb = featureByNormName.get(bNorm);
+      if (!fa || !fb) return;
+
+      const b1 = path.bounds(fa);
+      const b2 = path.bounds(fb);
+
+      const x0 = Math.min(b1[0][0], b2[0][0]);
+      const y0 = Math.min(b1[0][1], b2[0][1]);
+      const x1 = Math.max(b1[1][0], b2[1][0]);
+      const y1 = Math.max(b1[1][1], b2[1][1]);
+
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const padding = 40;
+
+      const scale = Math.min(
+        mapWidth / (dx + padding),
+        mapHeight / (dy + padding)
+      );
+
+      const translate = [
+        mapWidth / 2 - scale * (x0 + x1) / 2,
+        mapHeight / 2 - scale * (y0 + y1) / 2
+      ];
+
+      const transform = d3.zoomIdentity
+        .translate(translate[0], translate[1])
+        .scale(scale);
+
+      mapSvg.transition()
+        .duration(800)
+        .call(zoomBehavior.transform, transform);
+    }
+
+    // ---------------- Map tooltip ----------------
+    function showMapTooltip(event, countryName, stats) {
+      const fmt    = d3.format(",.2f");
+      const fmtPct = d3.format("+.0%");
+
+      if (!stats) {
+        tooltip
+          .style("opacity", 1)
+          .html(`<strong>${countryName}</strong><br/>No aid data in this dataset.`);
+        moveTooltip(event);
+        return;
+      }
+
+      const net      = stats.net_aid;
+      const netLabel = net >= 0 ? "Net Donor" : "Net Recipient";
+
+      const balanceShare = stats.balance ?? (
+        stats.total_flow > 0 ? net / stats.total_flow : 0
+      );
+
+      tooltip
+        .style("opacity", 1)
+        .html(`
+          <strong>${stats.country}</strong><br/>
+          Total Donated: ${fmt(stats.total_donated)}<br/>
+          Total Received: ${fmt(stats.total_received)}<br/>
+          Net Aid: ${fmt(net)} (${netLabel})<br/>
+          Net balance share: ${fmtPct(balanceShare)}<br/>
+          Total Flow: ${fmt(stats.total_flow)}
+        `);
+
+      moveTooltip(event);
+    }
+  </script>
+</body>
+</html>
