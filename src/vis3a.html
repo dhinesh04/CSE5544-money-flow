@@ -378,16 +378,21 @@
                     const countryName = d.properties.name;
 
                     const record = dataMap.get(countryName);
-                    // Direct access: record is now { "Purpose A": 100, ... }
                     const value = (record && record[purpose]) ? record[purpose] : 0;
 
                     const formattedValue = value > 0
                         ? "$" + (value / 1000000).toFixed(1) + " M"
                         : "No Data";
 
+                    // --- FIX START ---
+                    // Get coordinates relative to the SVG container
+                    const [x, y] = d3.pointer(event, svg.node());
+
                     tooltip.html(`<strong>${countryName}</strong><br/>${formattedValue}`)
-                        .style("left", (event.pageX + 15) + "px")
-                        .style("top", (event.pageY - 28) + "px");
+                        .style("left", (x + 15) + "px") // Offset slightly right
+                        .style("top", (y - 15) + "px")  // Offset slightly up
+                        .style("opacity", 1);
+                    // --- FIX END ---
                 })
                 .on("mouseout", function () {
                     d3.select(this).attr("stroke", "#999").attr("stroke-width", 0.5);
