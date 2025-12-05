@@ -149,6 +149,8 @@
         </div>
     </div>
 
+    <!-- <div id="legend" class="legend-container"></div> -->
+
     <script>
         const mapWidth = 960;
         const mapHeight = 500;
@@ -199,7 +201,7 @@
 
         Promise.all([
             d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
-            d3.json("../data/processed_aid_data.json")
+            d3.json("../data/processed_aid_data_updated.json")
         ]).then(([topo, jsonData]) => {
 
             const dataMap = new Map();
@@ -346,6 +348,14 @@
             }
 
             d3.select("#chart-title").text("Click a country on the map to see details");
+
+            // const uniqueList = Array.from(allPurposes).sort().slice(0, 20); // Limit to 20 for layout sanity
+            // const legendContainer = d3.select("#legend");
+            // uniqueList.forEach(purpose => {
+            //     const item = legendContainer.append("div").attr("class", "legend-item");
+            //     item.append("div").attr("class", "legend-color").style("background-color", colorScale(purpose));
+            //     item.append("span").text(purpose);
+            // });
 
         }).catch(err => console.error("Error:", err));
 
